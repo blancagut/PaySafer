@@ -1,0 +1,125 @@
+{
+  "translate": {
+    "request": {
+      "text": "Hello {name}, your booking is on <b>{date}</b>.",
+      "source_language": null,
+      "target_language": "es",
+      "context": {
+        "domain": "booking",
+        "preserve": {
+          "variables": ["{name}", "{date}"],
+          "json_keys": [],
+          "markup": true
+        }
+      },
+      "cache_key": "trans:booking:es:hash123"
+    },
+    "gpt_request": {
+      "model": "gpt-4o-mini",
+      "temperature": 0.1,
+      "max_tokens": 500,
+      "response_format": { "type": "json_object" },
+      "messages": [
+        { "role": "system", "content": "<PROMPT_TRANSLATION>" },
+        { "role": "user", "content": "{\"text\":\"Hello {name}, your booking is on <b>{date}</b>.\",\"source_language\":null,\"target_language\":\"es\",\"context\":{\"domain\":\"booking\",\"preserve\":{\"variables\":[\"{name}\",\"{date}\"],\"json_keys\":[],\"markup\":true}}}" }
+      ]
+    },
+    "gpt_response": {
+      "translation": "Hola {name}, tu reserva es el <b>{date}</b>.",
+      "detected_language": "en"
+    },
+    "response": {
+      "translation": "Hola {name}, tu reserva es el <b>{date}</b>.",
+      "detected_language": "en",
+      "cache": { "hit": false, "key": "trans:booking:es:hash123" }
+    }
+  },
+  "booking_assist": {
+    "request": {
+      "booking_context": {
+        "services": [{ "id": "svc_1", "name": "Deep Cleaning", "duration_min": 120 }],
+        "workers": [{ "id": "wrk_1", "name": "Ana", "skills": ["cleaning"] }],
+        "current_step": "select_service"
+      },
+      "user_context": { "user_type": "returning", "history_summary": "Usually books deep cleaning." },
+      "goals": ["recommend_services", "suggest_duration"]
+    },
+    "gpt_request": {
+      "model": "gpt-4o-mini",
+      "temperature": 0.1,
+      "max_tokens": 500,
+      "response_format": { "type": "json_object" },
+      "messages": [
+        { "role": "system", "content": "<PROMPT_BOOKING_ASSIST>" },
+        { "role": "user", "content": "{\"booking_context\":{\"services\":[{\"id\":\"svc_1\",\"name\":\"Deep Cleaning\",\"duration_min\":120}],\"workers\":[{\"id\":\"wrk_1\",\"name\":\"Ana\",\"skills\":[\"cleaning\"]}],\"current_step\":\"select_service\"},\"user_context\":{\"user_type\":\"returning\",\"history_summary\":\"Usually books deep cleaning.\"},\"goals\":[\"recommend_services\",\"suggest_duration\"]}" }
+      ]
+    },
+    "gpt_response": {
+      "recommendations": {
+        "services": [{ "id": "svc_1", "reason": "Matches prior bookings." }],
+        "durations": [{ "service_id": "svc_1", "suggested_min": 120, "reason": "Standard duration." }]
+      },
+      "warnings": []
+    },
+    "response": {
+      "recommendations": {
+        "services": [{ "id": "svc_1", "reason": "Matches prior bookings." }],
+        "durations": [{ "service_id": "svc_1", "suggested_min": 120, "reason": "Standard duration." }]
+      },
+      "warnings": [],
+      "cache": { "hit": false, "key": "bookingassist:hash456" }
+    }
+  },
+  "assistant": {
+    "request": {
+      "question": "What is included in Deep Cleaning?",
+      "booking_context": { "services": [{ "id": "svc_1", "name": "Deep Cleaning", "details": "Includes kitchen, bathrooms, and floors." }] },
+      "language": "en"
+    },
+    "gpt_request": {
+      "model": "gpt-4o-mini",
+      "temperature": 0.1,
+      "max_tokens": 500,
+      "response_format": { "type": "json_object" },
+      "messages": [
+        { "role": "system", "content": "<PROMPT_ASSISTANT>" },
+        { "role": "user", "content": "{\"question\":\"What is included in Deep Cleaning?\",\"booking_context\":{\"services\":[{\"id\":\"svc_1\",\"name\":\"Deep Cleaning\",\"details\":\"Includes kitchen, bathrooms, and floors.\"}]},\"language\":\"en\"}" }
+      ]
+    },
+    "gpt_response": {
+      "answer": "Deep Cleaning includes kitchen, bathrooms, and floors.",
+      "follow_up_questions": ["Would you like to add window cleaning?"]
+    },
+    "response": {
+      "answer": "Deep Cleaning includes kitchen, bathrooms, and floors.",
+      "follow_up_questions": ["Would you like to add window cleaning?"],
+      "cache": { "hit": false, "key": "assistant:hash789" }
+    }
+  },
+  "text_generate": {
+    "request": {
+      "input": "Service: Deep Cleaning. Includes kitchen and bathrooms.",
+      "purpose": "service_description",
+      "tone": "professional",
+      "language": "en",
+      "user_type": "new"
+    },
+    "gpt_request": {
+      "model": "gpt-4o-mini",
+      "temperature": 0.1,
+      "max_tokens": 500,
+      "response_format": { "type": "json_object" },
+      "messages": [
+        { "role": "system", "content": "<PROMPT_TEXT_GENERATE>" },
+        { "role": "user", "content": "{\"input\":\"Service: Deep Cleaning. Includes kitchen and bathrooms.\",\"purpose\":\"service_description\",\"tone\":\"professional\",\"language\":\"en\",\"user_type\":\"new\"}" }
+      ]
+    },
+    "gpt_response": {
+      "text": "Deep Cleaning provides a comprehensive refresh of your home, covering kitchen and bathroom areas thoroughly."
+    },
+    "response": {
+      "text": "Deep Cleaning provides a comprehensive refresh of your home, covering kitchen and bathroom areas thoroughly.",
+      "cache": { "hit": false, "key": "textgen:hash321" }
+    }
+  }
+}
