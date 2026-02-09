@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import Link from "next/link"
 import {
   HelpCircle,
   MessageSquare,
@@ -18,6 +19,7 @@ import {
   Clock,
   CheckCircle2,
   ChevronRight,
+  Headphones,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -31,6 +33,7 @@ import {
 import { GlassCard } from "@/components/glass"
 import { cn } from "@/lib/utils"
 import { SupportChatWidget } from "@/components/support-chat-widget"
+import { createClient } from "@/lib/supabase/client"
 
 // ─── FAQ Data (categorized) ───
 
@@ -202,6 +205,23 @@ const helpTopics = [
 export default function HelpPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .single()
+          .then(({ data }) => {
+            if (data?.role === "admin") setIsAdmin(true)
+          })
+      }
+    })
+  }, [])
 
   const filteredFaqs = faqs.filter((faq) => {
     const matchesSearch =
@@ -323,28 +343,46 @@ export default function HelpPage() {
           <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/[0.06] rounded-full blur-2xl -translate-y-1/2 translate-x-1/2" />
           <div className="relative flex items-start gap-4">
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-              <MessageSquare className="w-6 h-6 text-white" />
+              {isAdmin ? <Headphones className="w-6 h-6 text-white" /> : <MessageSquare className="w-6 h-6 text-white" />}
             </div>
             <div className="flex-1">
-              <h3 className="font-semibold text-foreground text-lg">Live Chat Support</h3>
+              <h3 className="font-semibold text-foreground text-lg">
+                {isAdmin ? "Support Console" : "Live Chat Support"}
+              </h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Chat with our team in real-time. We typically reply within minutes.
+                {isAdmin
+                  ? "View and respond to customer support tickets from the Admin Panel."
+                  : "Chat with our team in real-time. We typically reply within minutes."}
               </p>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                <span className="text-xs text-emerald-400 font-medium">Agents online now</span>
-              </div>
-              <Button
-                className="mt-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20"
-                onClick={() => {
-                  // Trigger the chat widget by dispatching a custom event
-                  document.dispatchEvent(new CustomEvent("open-support-chat"))
-                }}
-              >
-                <MessageSquare className="w-4 h-4 mr-2" />
-                Chat with us
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
+              {!isAdmin && (
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                  <span className="text-xs text-emerald-400 font-medium">Agents online now</span>
+                </div>
+              )}
+              {isAdmin ? (
+                <Button
+                  asChild
+                  className="mt-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20"
+                >
+                  <Link href="/admin">
+                    <Headphones className="w-4 h-4 mr-2" />
+                    Go to Support Console
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Link>
+                </Button>
+              ) : (
+                <Button
+                  className="mt-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20"
+                  onClick={() => {
+                    document.dispatchEvent(new CustomEvent("open-support-chat"))
+                  }}
+                >
+                  <MessageSquare className="w-4 h-4 mr-2" />
+                  Chat with us
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              )}
             </div>
           </div>
         </GlassCard>
@@ -476,13 +514,25 @@ export default function HelpPage() {
             {"Can't find what you're looking for? Our support team is ready to help you with any question."}
           </p>
           <div className="flex items-center justify-center gap-3 mt-5">
-            <Button
-              className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20"
-              onClick={() => document.dispatchEvent(new CustomEvent("open-support-chat"))}
-            >
-              <MessageSquare className="w-4 h-4 mr-2" />
-              Chat with us
-            </Button>
+            {isAdmin ? (
+              <Button
+                asChild
+                className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20"
+              >
+                <Link href="/admin">
+                  <Headphones className="w-4 h-4 mr-2" />
+                  Go to Support Console
+                </Link>
+              </Button>
+            ) : (
+              <Button
+                className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20"
+                onClick={() => document.dispatchEvent(new CustomEvent("open-support-chat"))}
+              >
+                <MessageSquare className="w-4 h-4 mr-2" />
+                Chat with us
+              </Button>
+            )}
             <Button variant="outline" className="border-white/[0.10] hover:bg-white/[0.06]">
               <Mail className="w-4 h-4 mr-2" />
               Email us
@@ -491,8 +541,8 @@ export default function HelpPage() {
         </div>
       </GlassCard>
 
-      {/* Chat Widget (floating) */}
-      <SupportChatWidget />
+      {/* Chat Widget (floating) — hidden for admins */}
+      {!isAdmin && <SupportChatWidget />}
     </div>
   )
 }

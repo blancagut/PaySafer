@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import React, { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
@@ -40,6 +40,7 @@ import {
   Fingerprint,
   ShieldCheck,
   LayoutDashboard,
+  Sparkles,
 } from "lucide-react"
 import { GlassCard, GlassStat, GlassContainer } from "@/components/glass"
 import { GlassBadge, statusBadgeMap, offerStatusBadgeMap } from "@/components/glass"
@@ -70,6 +71,7 @@ import {
   ResponsiveContainer,
 } from "recharts"
 
+import { createClient } from "@/lib/supabase/client"
 import {
   verifyAdmin,
   getAdminStats,
@@ -95,9 +97,9 @@ import {
   type AdminOfferFilters,
 } from "@/lib/actions/admin"
 
-/* ═══════════════════════════════════════════════════════════
+/* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
    Utilities
-   ═══════════════════════════════════════════════════════════ */
+   в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */
 
 function fmt(n: number, currency = "USD") {
   return new Intl.NumberFormat("en-US", {
@@ -137,7 +139,7 @@ function ChartTooltip({ active, payload, label }: any) {
   )
 }
 
-/* ─── Tab Config ─── */
+/* в”Ђв”Ђв”Ђ Tab Config в”Ђв”Ђв”Ђ */
 
 type AdminTab = "overview" | "revenue" | "transactions" | "disputes" | "users" | "offers" | "audit" | "config"
 
@@ -152,7 +154,7 @@ const tabs: { key: AdminTab; label: string; icon: React.ReactNode }[] = [
   { key: "config",       label: "Config",        icon: <Settings className="w-4 h-4" /> },
 ]
 
-/* ─── Pagination ─── */
+/* в”Ђв”Ђв”Ђ Pagination в”Ђв”Ђв”Ђ */
 
 function Pagination({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (p: number) => void }) {
   if (totalPages <= 1) return null
@@ -192,7 +194,7 @@ function Pagination({ page, totalPages, onPage }: { page: number; totalPages: nu
   )
 }
 
-/* ─── Section Header ─── */
+/* в”Ђв”Ђв”Ђ Section Header в”Ђв”Ђв”Ђ */
 
 function SectionHeader({ title, description, count }: { title: string; description?: string; count?: number }) {
   return (
@@ -210,7 +212,7 @@ function SectionHeader({ title, description, count }: { title: string; descripti
   )
 }
 
-/* ─── Filter Pill Bar ─── */
+/* в”Ђв”Ђв”Ђ Filter Pill Bar в”Ђв”Ђв”Ђ */
 
 function FilterBar<T extends string | undefined>({
   options,
@@ -240,7 +242,7 @@ function FilterBar<T extends string | undefined>({
   )
 }
 
-/* ─── Skeleton Row ─── */
+/* в”Ђв”Ђв”Ђ Skeleton Row в”Ђв”Ђв”Ђ */
 
 function SkeletonRows({ count = 5 }: { count?: number }) {
   return (
@@ -259,7 +261,7 @@ function SkeletonRows({ count = 5 }: { count?: number }) {
   )
 }
 
-/* ─── Empty State ─── */
+/* в”Ђв”Ђв”Ђ Empty State в”Ђв”Ђв”Ђ */
 
 function EmptyState({ icon: Icon, title, description }: { icon: any; title: string; description?: string }) {
   return (
@@ -273,9 +275,9 @@ function EmptyState({ icon: Icon, title, description }: { icon: any; title: stri
   )
 }
 
-/* ═══════════════════════════════════════════════════════════
+/* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
    MAIN ADMIN PAGE
-   ═══════════════════════════════════════════════════════════ */
+   в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */
 
 export default function AdminPage() {
   const [authorized, setAuthorized] = useState<boolean | null>(null)
@@ -313,12 +315,12 @@ export default function AdminPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
-  /* ─── Auth check ─── */
+  /* в”Ђв”Ђв”Ђ Auth check в”Ђв”Ђв”Ђ */
   useEffect(() => {
     verifyAdmin().then((res) => setAuthorized(!res.error))
   }, [])
 
-  /* ─── Data Loaders ─── */
+  /* в”Ђв”Ђв”Ђ Data Loaders в”Ђв”Ђв”Ђ */
   const loadOverview = useCallback(async () => {
     const [s, r] = await Promise.all([getAdminStats(), getAdminRevenueMetrics()])
     if (s.data) setStats(s.data)
@@ -362,7 +364,7 @@ export default function AdminPage() {
   useEffect(() => { if (authorized && activeTab === "offers")       loadOffers()       }, [authorized, activeTab, loadOffers])
   useEffect(() => { if (authorized && activeTab === "audit")        loadAudit()        }, [authorized, activeTab, loadAudit])
 
-  /* ─── Admin Actions ─── */
+  /* в”Ђв”Ђв”Ђ Admin Actions в”Ђв”Ђв”Ђ */
   const refreshAll = () => {
     loadOverview()
     if (activeTab === "transactions") loadTransactions()
@@ -401,9 +403,9 @@ export default function AdminPage() {
     const msgs: Record<string, string> = {
       release_to_seller: "Funds released to seller",
       refund_to_buyer: "Funds refunded to buyer",
-      hold_funds: "Funds frozen — held in platform",
-      ban_both_hold: "Both parties banned — funds frozen",
-      escalate_authorities: "Escalated to authorities — funds frozen, users banned",
+      hold_funds: "Funds frozen вЂ” held in platform",
+      ban_both_hold: "Both parties banned вЂ” funds frozen",
+      escalate_authorities: "Escalated to authorities вЂ” funds frozen, users banned",
     }
     toast.success(msgs[resolution] || "Dispute action completed")
     setActionDialog(null); setActionReason("")
@@ -451,7 +453,7 @@ export default function AdminPage() {
     setTimeout(() => setCopiedId(null), 2000)
   }
 
-  /* ═══════════ Auth Gate ═══════════ */
+  /* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ Auth Gate в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */
 
   if (authorized === null) {
     return (
@@ -483,12 +485,12 @@ export default function AdminPage() {
     )
   }
 
-  /* ═══════════ Rendered Page ═══════════ */
+  /* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ Rendered Page в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */
 
   return (
     <div className="space-y-8 pb-20 md:pb-0">
 
-      {/* ─── Page Header ─── */}
+      {/* в”Ђв”Ђв”Ђ Page Header в”Ђв”Ђв”Ђ */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="relative">
@@ -523,7 +525,7 @@ export default function AdminPage() {
         </Button>
       </div>
 
-      {/* ─── Tab Navigation ─── */}
+      {/* в”Ђв”Ђв”Ђ Tab Navigation в”Ђв”Ђв”Ђ */}
       <nav className="flex items-center gap-1 bg-white/[0.02] rounded-xl p-1.5 border border-white/[0.06] overflow-x-auto scrollbar-none">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.key
@@ -551,7 +553,7 @@ export default function AdminPage() {
         })}
       </nav>
 
-      {/* ═══════════════ OVERVIEW TAB ═══════════════ */}
+      {/* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ OVERVIEW TAB в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */}
       {activeTab === "overview" && (
         <div className="space-y-8 animate-fade-in">
           {loading ? (
@@ -724,7 +726,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ═══════════════ REVENUE TAB ═══════════════ */}
+      {/* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ REVENUE TAB в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */}
       {activeTab === "revenue" && (
         <div className="space-y-6 animate-fade-in">
           <SectionHeader title="Revenue" description="Platform financial performance &amp; currency breakdown" />
@@ -801,7 +803,7 @@ export default function AdminPage() {
                       <div className="flex justify-between text-[12px] mb-1.5">
                         <span className="text-foreground font-semibold">{c.currency}</span>
                         <span className="text-muted-foreground tabular-nums">
-                          {fmt(c.amount, c.currency)} · {pct}%
+                          {fmt(c.amount, c.currency)} В· {pct}%
                         </span>
                       </div>
                       <div className="h-2 bg-white/[0.06] rounded-full overflow-hidden">
@@ -822,12 +824,12 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ═══════════════ TRANSACTIONS TAB ═══════════════ */}
+      {/* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ TRANSACTIONS TAB в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */}
       {activeTab === "transactions" && (
         <div className="space-y-5 animate-fade-in">
           <SectionHeader
             title="Transactions"
-            description="All platform transactions — release or refund from here"
+            description="All platform transactions вЂ” release or refund from here"
             count={txnPagination.total}
           />
 
@@ -876,9 +878,9 @@ export default function AdminPage() {
                           {txn.description}
                         </p>
                         <p className="text-[12px] text-muted-foreground mt-1">
-                          <span className="text-foreground/60">Buyer</span> {txn.buyer?.email || "—"}
+                          <span className="text-foreground/60">Buyer</span> {txn.buyer?.email || "вЂ”"}
                           <span className="mx-1.5 text-white/10">|</span>
-                          <span className="text-foreground/60">Seller</span> {txn.seller?.email || txn.seller_email || "—"}
+                          <span className="text-foreground/60">Seller</span> {txn.seller?.email || txn.seller_email || "вЂ”"}
                         </p>
                         <div className="flex items-center gap-2 mt-1.5">
                           <button
@@ -888,7 +890,7 @@ export default function AdminPage() {
                             {copiedId === txn.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                             {txn.id.slice(0, 8)}
                           </button>
-                          <span className="text-white/10">·</span>
+                          <span className="text-white/10">В·</span>
                           <span className="text-[11px] text-muted-foreground">{timeAgo(txn.created_at)}</span>
                         </div>
                       </div>
@@ -928,12 +930,12 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ═══════════════ DISPUTES TAB ═══════════════ */}
+      {/* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ DISPUTES TAB в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */}
       {activeTab === "disputes" && (
         <div className="space-y-5 animate-fade-in">
           <SectionHeader
             title="Disputes"
-            description="Admin-only resolution — you decide where every dollar goes"
+            description="Admin-only resolution вЂ” you decide where every dollar goes"
             count={disputePagination.total}
           />
 
@@ -1003,13 +1005,13 @@ export default function AdminPage() {
                             <p className="text-[12px] text-muted-foreground mt-0.5 truncate">{d.reason}</p>
                             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                               <span className="text-[11px] text-muted-foreground">
-                                Filed by <span className="text-foreground/70">{d.opener?.email || "—"}</span>
+                                Filed by <span className="text-foreground/70">{d.opener?.email || "вЂ”"}</span>
                               </span>
-                              <span className="text-white/10">·</span>
+                              <span className="text-white/10">В·</span>
                               <span className="text-[11px] text-muted-foreground">{timeAgo(d.created_at)}</span>
                               {d.transaction && (
                                 <>
-                                  <span className="text-white/10">·</span>
+                                  <span className="text-white/10">В·</span>
                                   <span className="text-[13px] font-bold tabular-nums text-foreground">
                                     {fmt(Number(d.transaction.amount), d.transaction.currency)}
                                   </span>
@@ -1028,7 +1030,7 @@ export default function AdminPage() {
                         </div>
                       </div>
 
-                      {/* Admin action buttons — only for active disputes */}
+                      {/* Admin action buttons вЂ” only for active disputes */}
                       {isActive && (
                         <div className="flex flex-wrap items-center gap-2 mt-4 ml-14">
                           <button onClick={() => setActionDialog({ type: "resolve_release", id: d.id })} className="px-3 py-2 text-[12px] font-semibold rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/10 transition-all">
@@ -1060,7 +1062,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ═══════════════ USERS TAB ═══════════════ */}
+      {/* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ USERS TAB в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */}
       {activeTab === "users" && (
         <div className="space-y-5 animate-fade-in">
           <SectionHeader
@@ -1130,7 +1132,7 @@ export default function AdminPage() {
                               {copiedId === u.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                               {u.id.slice(0, 8)}
                             </button>
-                            <span className="text-white/10">·</span>
+                            <span className="text-white/10">В·</span>
                             <span className="text-[11px] text-muted-foreground">Joined {timeAgo(u.created_at)}</span>
                           </div>
                         </div>
@@ -1180,7 +1182,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ═══════════════ OFFERS TAB ═══════════════ */}
+      {/* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ OFFERS TAB в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */}
       {activeTab === "offers" && (
         <div className="space-y-5 animate-fade-in">
           <SectionHeader
@@ -1236,7 +1238,7 @@ export default function AdminPage() {
                             <span className="mx-1.5 text-white/10">|</span>
                             {o.creator_role}
                             <span className="mx-1.5 text-white/10">|</span>
-                            {o.creator?.email || "—"}
+                            {o.creator?.email || "вЂ”"}
                           </p>
                           <span className="text-[11px] text-muted-foreground">{timeAgo(o.created_at)}</span>
                         </div>
@@ -1264,7 +1266,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ═══════════════ AUDIT LOG TAB ═══════════════ */}
+      {/* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ AUDIT LOG TAB в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */}
       {activeTab === "audit" && (
         <div className="space-y-5 animate-fade-in">
           <SectionHeader
@@ -1305,7 +1307,7 @@ export default function AdminPage() {
                           <span className="text-[11px] text-muted-foreground">
                             Target: <span className="font-mono text-foreground/60">{log.target_table}/{log.target_id?.slice(0, 8)}</span>
                           </span>
-                          <span className="text-white/10">·</span>
+                          <span className="text-white/10">В·</span>
                           <span className="text-[11px] text-muted-foreground">
                             Actor: <span className="font-mono text-foreground/60">{log.actor_id?.slice(0, 8)}</span>
                           </span>
@@ -1330,7 +1332,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ═══════════════ CONFIG TAB ═══════════════ */}
+      {/* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ CONFIG TAB в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */}
       {activeTab === "config" && (
         <div className="space-y-6 animate-fade-in">
           <SectionHeader title="Configuration" description="Platform-wide settings &amp; system health" />
@@ -1422,7 +1424,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ═══════════════ ACTION DIALOG ═══════════════ */}
+      {/* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ ACTION DIALOG в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */}
       <Dialog open={!!actionDialog} onOpenChange={() => { setActionDialog(null); setActionReason("") }}>
         <DialogContent className="bg-[hsl(222,47%,8%)] border-white/[0.08] max-w-md rounded-2xl">
           <DialogHeader className="space-y-2">
@@ -1452,8 +1454,8 @@ export default function AdminPage() {
               <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
               <p className="text-[11px] text-red-400 font-medium">
                 {actionDialog?.type === "resolve_authorities"
-                  ? "Nuclear option — involves law enforcement. Make sure you have evidence."
-                  : "High severity — both parties will lose platform access."}
+                  ? "Nuclear option вЂ” involves law enforcement. Make sure you have evidence."
+                  : "High severity вЂ” both parties will lose platform access."}
               </p>
             </div>
           )}

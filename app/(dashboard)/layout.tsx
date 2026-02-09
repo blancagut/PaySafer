@@ -28,6 +28,7 @@ import {
   ChevronRight,
   Command,
   Banknote,
+  MessageCircle,
 } from "lucide-react"
 import { Logo } from "@/components/logo"
 import { cn } from "@/lib/utils"
@@ -61,6 +62,7 @@ const navigation = [
 
 const adminNavigation = [
   { name: "Admin Panel", href: "/admin", icon: Shield },
+  { name: "Chats", href: "/admin/chats", icon: MessageCircle },
 ]
 
 const accountNavigation = [
