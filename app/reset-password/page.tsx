@@ -19,7 +19,35 @@ export default function ResetPasswordPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [sessionReady, setSessionReady] = useState(false)
+  const [sessionError, setSessionError] = useState(false)
   const router = useRouter()
+
+  // Check for valid session on mount
+  useEffect(() => {
+    const checkSession = async () => {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        setSessionReady(true)
+      } else {
+        // Listen for auth state change (PKCE flow delivers token via hash)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+          (event, session) => {
+            if (event === 'PASSWORD_RECOVERY' || session) {
+              setSessionReady(true)
+            }
+          }
+        )
+        // Give it a few seconds, then show error
+        setTimeout(() => {
+          setSessionError(true)
+        }, 3000)
+        return () => subscription.unsubscribe()
+      }
+    }
+    checkSession()
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -70,7 +98,29 @@ export default function ResetPasswordPage() {
       </header>
 
       <div className="flex-1 flex items-center justify-center p-8">
-        <Card className="w-full max-w-md border-0 shadow-lg">
+        {/* Loading / Error states */}
+        {!sessionReady && !sessionError && (
+          <Card className="w-full max-w-md border-0 shadow-lg">
+            <CardContent className="p-8 text-center">
+              <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4" />
+              <p className="text-muted-foreground">Verifying your reset link...</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {!sessionReady && sessionError && (
+          <Card className="w-full max-w-md border-0 shadow-lg">
+            <CardContent className="p-8 text-center space-y-4">
+              <p className="text-destructive font-medium">Reset link expired or invalid</p>
+              <p className="text-muted-foreground text-sm">Please request a new password reset link.</p>
+              <Link href="/forgot-password">
+                <Button className="mt-2">Request New Link</Button>
+              </Link>
+            </CardContent>
+          </Card>
+        )}
+
+        {sessionReady && (        <Card className="w-full max-w-md border-0 shadow-lg">
           <CardHeader className="space-y-1 pb-6">
             <div className="mb-4">
               <Logo size="md" />
@@ -164,6 +214,7 @@ export default function ResetPasswordPage() {
             </form>
           </CardContent>
         </Card>
+        )}
       </div>
     </div>
   )
