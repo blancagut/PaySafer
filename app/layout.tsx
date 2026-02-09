@@ -12,6 +12,10 @@ export const metadata: Metadata = {
   title: 'PaySafer.me - Safe Payments for Global Transactions',
   description: 'The trusted escrow platform for secure transactions between buyers and sellers worldwide. Pay safer, transact with confidence.',
   metadataBase: new URL('https://paysafer.me'),
+  icons: {
+    icon: '/favicon.svg',
+    apple: '/favicon.svg',
+  },
 }
 
 export default function RootLayout({
