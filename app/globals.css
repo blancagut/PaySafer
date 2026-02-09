@@ -35,14 +35,14 @@
     --chart-4: 0 72% 51%;
     --chart-5: 220 15% 15%;
     --radius: 0.625rem;
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 220 15% 25%;
-    --sidebar-primary: 220 15% 15%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 30 15% 95%;
-    --sidebar-accent-foreground: 220 15% 15%;
-    --sidebar-border: 30 10% 90%;
-    --sidebar-ring: 220 15% 15%;
+    --sidebar-background: 222 47% 5%;
+    --sidebar-foreground: 210 15% 70%;
+    --sidebar-primary: 160 84% 45%;
+    --sidebar-primary-foreground: 222 47% 6%;
+    --sidebar-accent: 222 30% 12%;
+    --sidebar-accent-foreground: 210 20% 85%;
+    --sidebar-border: 222 20% 14%;
+    --sidebar-ring: 160 84% 45%;
     
     /* Status colors */
     --status-draft: 220 10% 60%;
@@ -110,10 +110,30 @@
     @apply glass-card transition-all duration-300 hover:bg-white/[0.07] hover:border-white/[0.14] hover:shadow-xl;
   }
   .glass-sidebar {
-    @apply bg-[hsl(222,47%,5%)]/80 backdrop-blur-2xl border-r border-white/[0.06];
+    background: hsl(222, 47%, 5%);
+    @apply backdrop-blur-2xl border-r border-white/[0.06];
+    /* Force dark-mode colors regardless of theme */
+    --foreground: 210 20% 92%;
+    --muted-foreground: 215 15% 55%;
+    --primary: 160 84% 45%;
+    --primary-foreground: 222 47% 6%;
+    --border: 222 20% 16%;
+    --accent: 160 84% 45%;
+    --accent-foreground: 222 47% 6%;
+    color: hsl(210, 20%, 92%);
   }
   .glass-topbar {
-    @apply bg-[hsl(222,47%,5%)]/60 backdrop-blur-2xl border-b border-white/[0.06];
+    background: hsl(222, 47%, 5%);
+    @apply backdrop-blur-2xl border-b border-white/[0.06];
+    /* Force dark-mode colors regardless of theme */
+    --foreground: 210 20% 92%;
+    --muted-foreground: 215 15% 55%;
+    --primary: 160 84% 45%;
+    --primary-foreground: 222 47% 6%;
+    --border: 222 20% 16%;
+    --accent: 160 84% 45%;
+    --accent-foreground: 222 47% 6%;
+    color: hsl(210, 20%, 92%);
   }
   .glass-input {
     @apply bg-white/[0.04] border border-white/[0.10] rounded-lg backdrop-blur-sm

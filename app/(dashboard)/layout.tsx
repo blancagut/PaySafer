@@ -369,7 +369,7 @@ export default function DashboardLayout({
 
       {/* ─── Mobile Sidebar Sheet ─── */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" className="w-[280px] p-0 bg-[hsl(222,47%,5%)] border-r border-white/[0.06]">
+        <SheetContent side="left" className="w-[280px] p-0 bg-[hsl(222,47%,5%)] border-r border-white/[0.06] glass-sidebar">
           <div className="flex flex-col h-full">{sidebarContent(true)}</div>
         </SheetContent>
       </Sheet>
