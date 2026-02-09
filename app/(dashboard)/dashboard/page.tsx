@@ -24,6 +24,8 @@ import {
   Zap,
   ChevronRight,
   ArrowRight,
+  Sparkles,
+  History,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { GlassCard, GlassStat, GlassContainer } from "@/components/glass"
@@ -61,16 +63,19 @@ function timeAgo(dateStr: string) {
 }
 
 // Placeholder chart data (will be replaced by real analytics in Phase 5)
+// Use deterministic seed-like approach to avoid SSR/client hydration mismatch
 function generateVolumeData() {
   const data = []
   const now = new Date()
   for (let i = 29; i >= 0; i--) {
     const d = new Date(now)
     d.setDate(d.getDate() - i)
+    // Deterministic pseudo-random based on day index
+    const seed = (i * 2654435761) >>> 0
     data.push({
       date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      inflow: Math.floor(Math.random() * 5000) + 1000,
-      outflow: Math.floor(Math.random() * 4000) + 800,
+      inflow: (seed % 5000) + 1000,
+      outflow: ((seed * 3) % 4000) + 800,
     })
   }
   return data
@@ -104,6 +109,7 @@ function ChartTooltip({ active, payload, label }: any) {
 }
 
 export default function DashboardPage() {
+  const [mounted, setMounted] = useState(false)
   const [profile, setProfile] = useState<any>(null)
   const [txnStats, setTxnStats] = useState<{ active: number; completed: number; disputes: number; total: number } | null>(null)
   const [offerStats, setOfferStats] = useState<{ total: number; pending: number; accepted: number } | null>(null)
@@ -111,9 +117,16 @@ export default function DashboardPage() {
   const [recentOffers, setRecentOffers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
-  const [volumeData] = useState(generateVolumeData)
-  const [statusData] = useState(generateStatusData)
+  const [volumeData, setVolumeData] = useState<any[]>([])
+  const [statusData, setStatusData] = useState<any[]>([])
   const [chartRange, setChartRange] = useState<"7d" | "30d" | "90d">("30d")
+
+  // Only run on client to avoid SSR hydration mismatches
+  useEffect(() => {
+    setMounted(true)
+    setVolumeData(generateVolumeData())
+    setStatusData(generateStatusData())
+  }, [])
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -274,6 +287,7 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="h-[280px] px-2 pb-4">
+            {mounted && volumeData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={volumeData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
@@ -317,6 +331,11 @@ export default function DashboardPage() {
                 />
               </AreaChart>
             </ResponsiveContainer>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <div className="h-32 w-full bg-white/[0.02] rounded-lg animate-pulse" />
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-6 px-6 pb-4">
             <div className="flex items-center gap-2">
@@ -337,6 +356,7 @@ export default function DashboardPage() {
             <p className="text-xs text-muted-foreground mt-0.5">Current distribution</p>
           </div>
           <div className="h-[180px] px-2">
+            {mounted && statusData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={statusData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
                 <XAxis type="number" hide />
@@ -352,8 +372,12 @@ export default function DashboardPage() {
                 <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={16} />
               </BarChart>
             </ResponsiveContainer>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <div className="h-32 w-full bg-white/[0.02] rounded-lg animate-pulse" />
+              </div>
+            )}
           </div>
-          {/* Quick actions under the chart */}
           <div className="p-4 border-t border-white/[0.06] space-y-2">
             <Link
               href="/analytics"

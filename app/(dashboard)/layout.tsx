@@ -170,14 +170,16 @@ export default function DashboardLayout({
         supabase
           .from("profiles").select("*").eq("id", user.id).single()
           .then(({ data }) => setProfile(data))
+          .catch(() => {}) // Silently handle profile fetch errors
 
         // Get unread notification count
         supabase
           .from("notifications").select("*", { count: "exact", head: true })
           .eq("user_id", user.id).eq("read", false)
           .then(({ count }) => setNotifCount(count ?? 0))
+          .catch(() => {}) // Silently handle notification fetch errors
       }
-    })
+    }).catch(() => {}) // Silently handle auth errors
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
@@ -185,6 +187,7 @@ export default function DashboardLayout({
         supabase
           .from("profiles").select("*").eq("id", session.user.id).single()
           .then(({ data }) => setProfile(data))
+          .catch(() => {})
       } else {
         setProfile(null)
       }
