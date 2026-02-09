@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import {
   Eye,
   EyeOff,
@@ -9,32 +9,25 @@ import {
   Globe,
   Bell,
   Loader2,
-  CheckCircle2,
   Palette,
   Monitor,
   Moon,
   Sun,
   Shield,
-  Keyboard,
   Smartphone,
   Download,
   Trash2,
   Info,
-  Clock,
-  MapPin,
-  UserCheck,
-  Link2,
-  Unplug,
   Activity,
   LogOut,
   Fingerprint,
   EyeIcon,
-  Users,
   CreditCard,
   FileText,
   AlertTriangle,
   Zap,
   Hash,
+  Link2,
 } from "lucide-react"
 import { GlassCard, GlassContainer } from "@/components/glass"
 import { GlassInput } from "@/components/glass"
@@ -49,71 +42,105 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { toast } from "sonner"
 import { updatePassword } from "@/lib/actions/profile"
+import {
+  getUserSettings,
+  updateUserSettings,
+  exportTransactionsCSV,
+  exportOffersCSV,
+  exportAccountData,
+  deleteAccount,
+  signOutAllSessions,
+  type UserSettings,
+} from "@/lib/actions/settings"
 import { useTheme } from "next-themes"
+import { useRouter } from "next/navigation"
 
 type SettingsSection = "security" | "notifications" | "appearance" | "preferences" | "privacy" | "sessions" | "connected" | "advanced"
 
+// ─── Helpers ───
+
+function downloadFile(content: string, filename: string, mime: string) {
+  const blob = new Blob([content], { type: mime })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
+  const router = useRouter()
   const [activeSection, setActiveSection] = useState<SettingsSection>("security")
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [passwordData, setPasswordData] = useState({ new: "", confirm: "" })
-  const [notifications, setNotifications] = useState({
-    email: true,
-    transactions: true,
-    disputes: true,
-    offers: true,
-    marketing: false,
-    realtime: true,
-    sound: true,
-    weeklyDigest: false,
-  })
-  const [preferences, setPreferences] = useState({
-    currency: "USD",
-    language: "en",
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-    dateFormat: "MM/DD/YYYY",
-    compactMode: false,
-    animations: true,
-  })
-  const [privacy, setPrivacy] = useState({
-    profileVisible: true,
-    showFullName: true,
-    showStats: true,
-    showActivity: false,
-    allowSearchByEmail: true,
-  })
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState("")
+  const [deleting, setDeleting] = useState(false)
+  const [exporting, setExporting] = useState<string | null>(null)
+  const [signingOut, setSigningOut] = useState(false)
 
-  // Persist prefs to localStorage
+  // Settings state – loaded from Supabase
+  const [settings, setSettings] = useState<UserSettings | null>(null)
+
+  // Debounce ref for auto-save
+  const saveTimeout = useRef<NodeJS.Timeout | null>(null)
+
+  // ─── Load Settings from Supabase ───
   useEffect(() => {
-    const storedNotifs = localStorage.getItem("paysafe-notifications")
-    if (storedNotifs) try { setNotifications(JSON.parse(storedNotifs)) } catch {}
-    const storedPrefs = localStorage.getItem("paysafe-preferences")
-    if (storedPrefs) try { setPreferences(JSON.parse(storedPrefs)) } catch {}
-    const storedPrivacy = localStorage.getItem("paysafe-privacy")
-    if (storedPrivacy) try { setPrivacy(JSON.parse(storedPrivacy)) } catch {}
+    let cancelled = false
+    async function load() {
+      setLoading(true)
+      const { data, error } = await getUserSettings()
+      if (!cancelled) {
+        if (error) {
+          toast.error("Failed to load settings")
+          console.error(error)
+        }
+        if (data) setSettings(data)
+        setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
   }, [])
 
-  const saveNotifications = (v: typeof notifications) => {
-    setNotifications(v)
-    localStorage.setItem("paysafe-notifications", JSON.stringify(v))
-    toast.success("Saved")
-  }
-  const savePreferences = (v: typeof preferences) => {
-    setPreferences(v)
-    localStorage.setItem("paysafe-preferences", JSON.stringify(v))
-    toast.success("Saved")
-  }
-  const savePrivacy = (v: typeof privacy) => {
-    setPrivacy(v)
-    localStorage.setItem("paysafe-privacy", JSON.stringify(v))
-    toast.success("Saved")
-  }
+  // ─── Persist a partial update to Supabase with debounce ───
+  const persistSettings = useCallback(
+    (patch: Partial<Omit<UserSettings, "id" | "created_at" | "updated_at">>) => {
+      // Optimistically update local state
+      setSettings((prev) => (prev ? { ...prev, ...patch } : prev))
 
+      // Debounce the actual API call
+      if (saveTimeout.current) clearTimeout(saveTimeout.current)
+      saveTimeout.current = setTimeout(async () => {
+        const { error } = await updateUserSettings(patch)
+        if (error) {
+          toast.error("Failed to save setting")
+          console.error(error)
+        }
+      }, 400)
+    },
+    []
+  )
+
+  // ─── Password Change ───
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault()
     if (passwordData.new.length < 6) { toast.error("Password must be at least 6 characters"); return }
@@ -127,6 +154,72 @@ export default function SettingsPage() {
     finally { setSaving(false) }
   }
 
+  // ─── Export helpers ───
+  const handleExportTransactions = async () => {
+    setExporting("transactions")
+    try {
+      const { csv, error } = await exportTransactionsCSV()
+      if (error) { toast.error(error); return }
+      if (csv) {
+        downloadFile(csv, `paysafer-transactions-${new Date().toISOString().slice(0, 10)}.csv`, "text/csv")
+        toast.success("Transactions exported")
+      }
+    } catch { toast.error("Export failed") }
+    finally { setExporting(null) }
+  }
+
+  const handleExportOffers = async () => {
+    setExporting("offers")
+    try {
+      const { csv, error } = await exportOffersCSV()
+      if (error) { toast.error(error); return }
+      if (csv) {
+        downloadFile(csv, `paysafer-offers-${new Date().toISOString().slice(0, 10)}.csv`, "text/csv")
+        toast.success("Offers exported")
+      }
+    } catch { toast.error("Export failed") }
+    finally { setExporting(null) }
+  }
+
+  const handleExportAccountData = async () => {
+    setExporting("account")
+    try {
+      const { json, error } = await exportAccountData()
+      if (error) { toast.error(error); return }
+      if (json) {
+        downloadFile(json, `paysafer-account-data-${new Date().toISOString().slice(0, 10)}.json`, "application/json")
+        toast.success("Account data exported")
+      }
+    } catch { toast.error("Export failed") }
+    finally { setExporting(null) }
+  }
+
+  // ─── Delete Account ───
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== "DELETE") return
+    setDeleting(true)
+    try {
+      const { success, error } = await deleteAccount()
+      if (error) { toast.error(error); return }
+      if (success) {
+        toast.success("Account scheduled for deletion. Signing out…")
+        router.push("/login")
+      }
+    } catch { toast.error("Delete failed") }
+    finally { setDeleting(false); setShowDeleteDialog(false) }
+  }
+
+  // ─── Sign Out All ───
+  const handleSignOutAll = async () => {
+    setSigningOut(true)
+    try {
+      const { success, error } = await signOutAllSessions()
+      if (error) toast.error(error)
+      else if (success) toast.success("All other sessions have been revoked")
+    } catch { toast.error("Failed to sign out sessions") }
+    finally { setSigningOut(false) }
+  }
+
   const sections: { key: SettingsSection; label: string; icon: React.ReactNode }[] = [
     { key: "security", label: "Security", icon: <Lock className="w-4 h-4" /> },
     { key: "notifications", label: "Notifications", icon: <Bell className="w-4 h-4" /> },
@@ -137,6 +230,18 @@ export default function SettingsPage() {
     { key: "connected", label: "Connected Apps", icon: <Link2 className="w-4 h-4" /> },
     { key: "advanced", label: "Advanced", icon: <Shield className="w-4 h-4" /> },
   ]
+
+  // ─── Loading state ───
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Loading settings…</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 pb-20 md:pb-0">
@@ -202,12 +307,11 @@ export default function SettingsPage() {
                 </form>
               </GlassContainer>
 
-              {/* 2FA + Login Activity */}
               <GlassContainer header={{ title: "Authentication", description: "Additional security measures" }}>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center"><Fingerprint className="w-4.5 h-4.5 text-primary" /></div>
+                      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center"><Fingerprint className="w-4 h-4 text-primary" /></div>
                       <div>
                         <p className="text-sm font-semibold text-foreground">Two-Factor Authentication</p>
                         <p className="text-xs text-muted-foreground">Add an authenticator app for extra security</p>
@@ -217,23 +321,29 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center"><Activity className="w-4.5 h-4.5 text-amber-400" /></div>
+                      <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center"><Activity className="w-4 h-4 text-amber-400" /></div>
                       <div>
                         <p className="text-sm font-semibold text-foreground">Login Alerts</p>
                         <p className="text-xs text-muted-foreground">Get notified on new device logins</p>
                       </div>
                     </div>
-                    <Switch checked={true} />
+                    <Switch
+                      checked={settings?.login_alerts ?? true}
+                      onCheckedChange={(checked) => persistSettings({ login_alerts: checked })}
+                    />
                   </div>
                   <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center"><Shield className="w-4.5 h-4.5 text-blue-400" /></div>
+                      <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center"><Shield className="w-4 h-4 text-blue-400" /></div>
                       <div>
                         <p className="text-sm font-semibold text-foreground">Require Password on Actions</p>
                         <p className="text-xs text-muted-foreground">Confirm password for releases &gt; $500</p>
                       </div>
                     </div>
-                    <Switch checked={true} />
+                    <Switch
+                      checked={settings?.require_password_actions ?? true}
+                      onCheckedChange={(checked) => persistSettings({ require_password_actions: checked })}
+                    />
                   </div>
                 </div>
               </GlassContainer>
@@ -244,16 +354,16 @@ export default function SettingsPage() {
           {activeSection === "notifications" && (
             <GlassContainer header={{ title: "Notifications", description: "Choose what notifications you receive" }} className="animate-fade-in">
               <div className="space-y-1">
-                {[
-                  { key: "email" as const, title: "Email Notifications", desc: "Receive notifications via email", icon: <Bell className="w-4 h-4" /> },
-                  { key: "transactions" as const, title: "Transaction Updates", desc: "Status changes and payment confirmations", icon: <CreditCard className="w-4 h-4" /> },
-                  { key: "disputes" as const, title: "Dispute Alerts", desc: "Important dispute updates and resolution", icon: <AlertTriangle className="w-4 h-4" /> },
-                  { key: "offers" as const, title: "Offer Activity", desc: "When someone accepts or views your offers", icon: <Link2 className="w-4 h-4" /> },
-                  { key: "realtime" as const, title: "Real-time Push", desc: "In-app instant notifications", icon: <Zap className="w-4 h-4" /> },
-                  { key: "sound" as const, title: "Notification Sound", desc: "Play a sound for new notifications", icon: <Activity className="w-4 h-4" /> },
-                  { key: "weeklyDigest" as const, title: "Weekly Digest", desc: "Summary of your activity every Monday", icon: <FileText className="w-4 h-4" /> },
-                  { key: "marketing" as const, title: "Marketing Emails", desc: "News, tips, and product updates", icon: <Globe className="w-4 h-4" /> },
-                ].map((item) => (
+                {([
+                  { key: "notify_email" as const, title: "Email Notifications", desc: "Receive notifications via email", icon: <Bell className="w-4 h-4" /> },
+                  { key: "notify_transactions" as const, title: "Transaction Updates", desc: "Status changes and payment confirmations", icon: <CreditCard className="w-4 h-4" /> },
+                  { key: "notify_disputes" as const, title: "Dispute Alerts", desc: "Important dispute updates and resolution", icon: <AlertTriangle className="w-4 h-4" /> },
+                  { key: "notify_offers" as const, title: "Offer Activity", desc: "When someone accepts or views your offers", icon: <Link2 className="w-4 h-4" /> },
+                  { key: "notify_realtime" as const, title: "Real-time Push", desc: "In-app instant notifications", icon: <Zap className="w-4 h-4" /> },
+                  { key: "notify_sound" as const, title: "Notification Sound", desc: "Play a sound for new notifications", icon: <Activity className="w-4 h-4" /> },
+                  { key: "notify_weekly_digest" as const, title: "Weekly Digest", desc: "Summary of your activity every Monday", icon: <FileText className="w-4 h-4" /> },
+                  { key: "notify_marketing" as const, title: "Marketing Emails", desc: "News, tips, and product updates", icon: <Globe className="w-4 h-4" /> },
+                ] as const).map((item) => (
                   <div key={item.key} className="flex items-center justify-between py-3.5 px-3 rounded-lg hover:bg-white/[0.03] transition-colors">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center text-muted-foreground">{item.icon}</div>
@@ -262,7 +372,10 @@ export default function SettingsPage() {
                         <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
                       </div>
                     </div>
-                    <Switch checked={notifications[item.key]} onCheckedChange={(checked) => saveNotifications({ ...notifications, [item.key]: checked })} />
+                    <Switch
+                      checked={settings?.[item.key] ?? false}
+                      onCheckedChange={(checked) => persistSettings({ [item.key]: checked })}
+                    />
                   </div>
                 ))}
               </div>
@@ -301,7 +414,10 @@ export default function SettingsPage() {
                       <p className="text-sm font-medium text-foreground">Animations</p>
                       <p className="text-xs text-muted-foreground mt-0.5">Enable motion effects and transitions</p>
                     </div>
-                    <Switch checked={preferences.animations} onCheckedChange={(v) => savePreferences({ ...preferences, animations: v })} />
+                    <Switch
+                      checked={settings?.animations ?? true}
+                      onCheckedChange={(v) => persistSettings({ animations: v })}
+                    />
                   </div>
                 </div>
 
@@ -335,7 +451,7 @@ export default function SettingsPage() {
               <div className="space-y-5">
                 <div className="space-y-2">
                   <Label className="text-sm text-foreground font-medium">Default Currency</Label>
-                  <Select value={preferences.currency} onValueChange={(v) => savePreferences({ ...preferences, currency: v })}>
+                  <Select value={settings?.currency ?? "USD"} onValueChange={(v) => persistSettings({ currency: v })}>
                     <SelectTrigger className="h-11 bg-white/[0.03] border-white/[0.08]"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {["USD - US Dollar", "EUR - Euro", "GBP - British Pound", "CAD - Canadian Dollar", "AUD - Australian Dollar", "CHF - Swiss Franc", "JPY - Japanese Yen", "CNY - Chinese Yuan", "INR - Indian Rupee", "BRL - Brazilian Real"].map((c) => {
@@ -348,10 +464,10 @@ export default function SettingsPage() {
 
                 <div className="space-y-2">
                   <Label className="text-sm text-foreground font-medium">Language</Label>
-                  <Select value={preferences.language} onValueChange={(v) => savePreferences({ ...preferences, language: v })}>
+                  <Select value={settings?.language ?? "en"} onValueChange={(v) => persistSettings({ language: v })}>
                     <SelectTrigger className="h-11 bg-white/[0.03] border-white/[0.08]"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {[["en", "English"], ["es", "Espanol"], ["fr", "Francais"], ["de", "Deutsch"], ["pt", "Portugues"], ["ar", "Arabic"], ["zh", "Chinese"], ["ja", "Japanese"], ["ko", "Korean"], ["hi", "Hindi"]].map(([v, l]) => (
+                      {[["en", "English"], ["es", "Español"], ["fr", "Français"], ["de", "Deutsch"], ["pt", "Português"], ["ar", "Arabic"], ["zh", "Chinese"], ["ja", "Japanese"], ["ko", "Korean"], ["hi", "Hindi"]].map(([v, l]) => (
                         <SelectItem key={v} value={v}>{l}</SelectItem>
                       ))}
                     </SelectContent>
@@ -360,7 +476,7 @@ export default function SettingsPage() {
 
                 <div className="space-y-2">
                   <Label className="text-sm text-foreground font-medium">Timezone</Label>
-                  <Select value={preferences.timezone} onValueChange={(v) => savePreferences({ ...preferences, timezone: v })}>
+                  <Select value={settings?.timezone ?? "UTC"} onValueChange={(v) => persistSettings({ timezone: v })}>
                     <SelectTrigger className="h-11 bg-white/[0.03] border-white/[0.08]"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {["UTC", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "America/Sao_Paulo", "Europe/London", "Europe/Paris", "Europe/Berlin", "Asia/Dubai", "Asia/Shanghai", "Asia/Tokyo", "Asia/Kolkata", "Australia/Sydney"].map((tz) => (
@@ -372,7 +488,7 @@ export default function SettingsPage() {
 
                 <div className="space-y-2">
                   <Label className="text-sm text-foreground font-medium">Date Format</Label>
-                  <Select value={preferences.dateFormat} onValueChange={(v) => savePreferences({ ...preferences, dateFormat: v })}>
+                  <Select value={settings?.date_format ?? "MM/DD/YYYY"} onValueChange={(v) => persistSettings({ date_format: v })}>
                     <SelectTrigger className="h-11 bg-white/[0.03] border-white/[0.08]"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="MM/DD/YYYY">MM/DD/YYYY (US)</SelectItem>
@@ -389,7 +505,10 @@ export default function SettingsPage() {
                       <p className="text-sm font-medium text-foreground">Compact Mode</p>
                       <p className="text-xs text-muted-foreground mt-0.5">Reduce spacing for denser display</p>
                     </div>
-                    <Switch checked={preferences.compactMode} onCheckedChange={(v) => savePreferences({ ...preferences, compactMode: v })} />
+                    <Switch
+                      checked={settings?.compact_mode ?? false}
+                      onCheckedChange={(v) => persistSettings({ compact_mode: v })}
+                    />
                   </div>
                 </div>
               </div>
@@ -400,19 +519,22 @@ export default function SettingsPage() {
           {activeSection === "privacy" && (
             <GlassContainer header={{ title: "Privacy", description: "Control who can see your information" }} className="animate-fade-in">
               <div className="space-y-1">
-                {[
-                  { key: "profileVisible" as const, title: "Public Profile", desc: "Allow others to view your profile page" },
-                  { key: "showFullName" as const, title: "Show Full Name", desc: "Display your name to counterparties" },
-                  { key: "showStats" as const, title: "Show Transaction Stats", desc: "Let others see your success rate and volume" },
-                  { key: "showActivity" as const, title: "Show Online Status", desc: "Show when you were last active" },
-                  { key: "allowSearchByEmail" as const, title: "Discoverable by Email", desc: "Allow people to find you by email address" },
-                ].map((item) => (
+                {([
+                  { key: "profile_visible" as const, title: "Public Profile", desc: "Allow others to view your profile page" },
+                  { key: "show_full_name" as const, title: "Show Full Name", desc: "Display your name to counterparties" },
+                  { key: "show_stats" as const, title: "Show Transaction Stats", desc: "Let others see your success rate and volume" },
+                  { key: "show_activity" as const, title: "Show Online Status", desc: "Show when you were last active" },
+                  { key: "allow_search_by_email" as const, title: "Discoverable by Email", desc: "Allow people to find you by email address" },
+                ] as const).map((item) => (
                   <div key={item.key} className="flex items-center justify-between py-3.5 px-3 rounded-lg hover:bg-white/[0.03] transition-colors">
                     <div>
                       <p className="text-sm font-medium text-foreground">{item.title}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
                     </div>
-                    <Switch checked={privacy[item.key]} onCheckedChange={(checked) => savePrivacy({ ...privacy, [item.key]: checked })} />
+                    <Switch
+                      checked={settings?.[item.key] ?? false}
+                      onCheckedChange={(checked) => persistSettings({ [item.key]: checked })}
+                    />
                   </div>
                 ))}
               </div>
@@ -430,7 +552,6 @@ export default function SettingsPage() {
             <div className="space-y-6 animate-fade-in">
               <GlassContainer header={{ title: "Active Sessions", description: "Devices where you're currently logged in" }}>
                 <div className="space-y-3">
-                  {/* Current session */}
                   <div className="flex items-center justify-between p-4 rounded-lg bg-primary/[0.05] border border-primary/20">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center"><Monitor className="w-5 h-5 text-primary" /></div>
@@ -439,30 +560,28 @@ export default function SettingsPage() {
                           <p className="text-sm font-semibold text-foreground">This Device</p>
                           <GlassBadge variant="emerald" size="sm">Current</GlassBadge>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">Windows · Chrome · Last active now</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 60) + "…" : "Unknown"} · Active now
+                        </p>
                       </div>
                     </div>
-                  </div>
-
-                  {/* Example session */}
-                  <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-white/[0.06] flex items-center justify-center"><Smartphone className="w-5 h-5 text-muted-foreground" /></div>
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">iPhone 15</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">iOS · Safari · Last active 2h ago</p>
-                      </div>
-                    </div>
-                    <Button variant="outline" size="sm" className="text-red-400 border-red-500/20 hover:bg-red-500/10 hover:text-red-300 text-xs">
-                      <LogOut className="w-3 h-3 mr-1" /> Revoke
-                    </Button>
                   </div>
                 </div>
               </GlassContainer>
 
               <GlassCard padding="sm">
-                <Button variant="outline" size="sm" className="text-red-400 border-red-500/20 hover:bg-red-500/10 hover:text-red-300 w-full">
-                  <LogOut className="w-3.5 h-3.5 mr-1.5" /> Sign Out of All Other Devices
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={signingOut}
+                  onClick={handleSignOutAll}
+                  className="text-red-400 border-red-500/20 hover:bg-red-500/10 hover:text-red-300 w-full"
+                >
+                  {signingOut ? (
+                    <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Signing out…</>
+                  ) : (
+                    <><LogOut className="w-3.5 h-3.5 mr-1.5" /> Sign Out of All Other Devices</>
+                  )}
                 </Button>
                 <p className="text-[11px] text-muted-foreground mt-2 text-center">This will invalidate all sessions except your current one.</p>
               </GlassCard>
@@ -474,7 +593,6 @@ export default function SettingsPage() {
             <div className="space-y-6 animate-fade-in">
               <GlassContainer header={{ title: "Connected Services", description: "Third-party integrations and payment methods" }}>
                 <div className="space-y-3">
-                  {/* Stripe */}
                   <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-600 to-indigo-800 flex items-center justify-center">
@@ -488,7 +606,6 @@ export default function SettingsPage() {
                     <GlassBadge variant="amber" size="sm">Coming soon</GlassBadge>
                   </div>
 
-                  {/* Google */}
                   <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-white/[0.08] flex items-center justify-center text-lg font-bold text-foreground">G</div>
@@ -500,7 +617,6 @@ export default function SettingsPage() {
                     <Button variant="outline" size="sm" className="bg-white/[0.04] border-white/[0.10] hover:bg-white/[0.08] text-xs">Connect</Button>
                   </div>
 
-                  {/* Webhooks */}
                   <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-white/[0.08] flex items-center justify-center"><Hash className="w-5 h-5 text-muted-foreground" /></div>
@@ -512,7 +628,6 @@ export default function SettingsPage() {
                     <GlassBadge variant="amber" size="sm">Coming soon</GlassBadge>
                   </div>
 
-                  {/* API Key */}
                   <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-white/[0.08] flex items-center justify-center"><Lock className="w-5 h-5 text-muted-foreground" /></div>
@@ -541,7 +656,15 @@ export default function SettingsPage() {
                         <p className="text-xs text-muted-foreground">Download CSV of all your transactions</p>
                       </div>
                     </div>
-                    <Button variant="outline" size="sm" className="bg-white/[0.04] border-white/[0.10] hover:bg-white/[0.08]">Export CSV</Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={exporting === "transactions"}
+                      onClick={handleExportTransactions}
+                      className="bg-white/[0.04] border-white/[0.10] hover:bg-white/[0.08]"
+                    >
+                      {exporting === "transactions" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Export CSV"}
+                    </Button>
                   </div>
                   <div className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
                     <div className="flex items-center gap-3">
@@ -551,7 +674,15 @@ export default function SettingsPage() {
                         <p className="text-xs text-muted-foreground">Download all your offer history</p>
                       </div>
                     </div>
-                    <Button variant="outline" size="sm" className="bg-white/[0.04] border-white/[0.10] hover:bg-white/[0.08]">Export</Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={exporting === "offers"}
+                      onClick={handleExportOffers}
+                      className="bg-white/[0.04] border-white/[0.10] hover:bg-white/[0.08]"
+                    >
+                      {exporting === "offers" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Export"}
+                    </Button>
                   </div>
                   <div className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
                     <div className="flex items-center gap-3">
@@ -561,7 +692,15 @@ export default function SettingsPage() {
                         <p className="text-xs text-muted-foreground">Get a copy of all your data (GDPR)</p>
                       </div>
                     </div>
-                    <Button variant="outline" size="sm" className="bg-white/[0.04] border-white/[0.10] hover:bg-white/[0.08]">Request</Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={exporting === "account"}
+                      onClick={handleExportAccountData}
+                      className="bg-white/[0.04] border-white/[0.10] hover:bg-white/[0.08]"
+                    >
+                      {exporting === "account" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Request"}
+                    </Button>
                   </div>
                 </div>
               </GlassContainer>
@@ -572,7 +711,14 @@ export default function SettingsPage() {
                   <div className="flex-1">
                     <p className="text-sm font-semibold text-foreground">Danger Zone</p>
                     <p className="text-xs text-muted-foreground mt-1">Once you delete your account, all data will be permanently removed. This cannot be undone.</p>
-                    <Button variant="outline" size="sm" className="mt-3 text-red-400 border-red-500/20 hover:bg-red-500/10 hover:text-red-300">Delete Account</Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowDeleteDialog(true)}
+                      className="mt-3 text-red-400 border-red-500/20 hover:bg-red-500/10 hover:text-red-300"
+                    >
+                      Delete Account
+                    </Button>
                   </div>
                 </div>
               </GlassCard>
@@ -581,6 +727,44 @@ export default function SettingsPage() {
 
         </div>
       </div>
+
+      {/* ─── Delete Account Confirmation Dialog ─── */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-400 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5" />
+              Delete Account
+            </DialogTitle>
+            <DialogDescription>
+              This action is <strong>irreversible</strong>. All your data, transactions, offers, and settings will be permanently deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Label className="text-sm text-foreground">
+              Type <span className="font-mono font-bold text-red-400">DELETE</span> to confirm
+            </Label>
+            <GlassInput
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="Type DELETE"
+              className="font-mono"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowDeleteDialog(false); setDeleteConfirmText("") }}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteConfirmText !== "DELETE" || deleting}
+              onClick={handleDeleteAccount}
+            >
+              {deleting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Deleting…</> : "Permanently Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

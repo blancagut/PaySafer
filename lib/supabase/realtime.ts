@@ -10,6 +10,8 @@ type SubscribableTable =
   | "dispute_messages"
   | "notifications"
   | "offers"
+  | "support_messages"
+  | "support_tickets"
 
 type PostgresEvent = "INSERT" | "UPDATE" | "DELETE" | "*"
 
@@ -167,4 +169,24 @@ export function createRealtimeChannel(
       return () => supabase.removeChannel(channel)
     },
   }
+}
+
+/**
+ * Subscribe to support chat messages for a specific ticket.
+ */
+export function useSupportChatSubscription(
+  ticketId: string | undefined,
+  onMessage: (message: Record<string, unknown>) => void
+) {
+  return useRealtimeSubscription({
+    table: "support_messages",
+    event: "INSERT",
+    filter: ticketId ? `ticket_id=eq.${ticketId}` : undefined,
+    onData: (payload) => {
+      if (payload.new && typeof payload.new === "object") {
+        onMessage(payload.new as Record<string, unknown>)
+      }
+    },
+    enabled: !!ticketId,
+  })
 }

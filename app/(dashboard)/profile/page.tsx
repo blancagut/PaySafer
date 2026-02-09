@@ -18,7 +18,8 @@ import {
 import { GlassCard, GlassStat, GlassContainer } from "@/components/glass"
 import { GlassBadge } from "@/components/glass"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { ProfilePhotoUpload } from "@/components/profile-photo-upload"
 import { getProfile } from "@/lib/actions/profile"
 import { getTransactionStats } from "@/lib/actions/transactions"
 import { toast } from "sonner"
@@ -29,6 +30,7 @@ export default function ProfilePage() {
   const [stats, setStats] = useState<any>(null)
   const [user, setUser] = useState<any>(null)
   const [copiedId, setCopiedId] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -37,7 +39,10 @@ export default function ProfilePage() {
         getProfile(),
         getTransactionStats(),
       ])
-      if (profileRes.data) setProfile(profileRes.data)
+      if (profileRes.data) {
+        setProfile(profileRes.data)
+        setAvatarUrl(profileRes.data.avatar_url || null)
+      }
       if (statsRes.data) setStats(statsRes.data)
 
       const { createClient } = await import("@/lib/supabase/client")
@@ -96,11 +101,11 @@ export default function ProfilePage() {
         <div className="h-20 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent" />
         <div className="px-6 pb-6 -mt-10">
           <div className="flex flex-col md:flex-row md:items-end gap-4">
-            <Avatar className="w-20 h-20 border-4 border-[hsl(222,47%,8%)] shadow-xl">
-              <AvatarFallback className="bg-primary text-primary-foreground text-2xl font-bold">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
+            <ProfilePhotoUpload
+              avatarUrl={avatarUrl}
+              initials={initials}
+              onAvatarChange={(url) => setAvatarUrl(url)}
+            />
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <h3 className="text-xl font-bold text-foreground">{fullName}</h3>
