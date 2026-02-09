@@ -88,7 +88,7 @@ BEGIN
     AND table_name = 'profiles' 
     AND column_name = 'role'
   ) THEN
-    ALTER TABLE public.profiles ADD COLUMN role TEXT DEFAULT 'user' CHECK (role IN ('user', 'admin'));
+    ALTER TABLE public.profiles ADD COLUMN role TEXT DEFAULT 'user' CHECK (role IN ('user', 'admin', 'banned'));
   END IF;
 END $$;
 
@@ -1233,4 +1233,16 @@ ORDER BY tablename, policyname;
 -- ✅ Service role: Bypasses RLS for webhooks (by design)
 -- ✅ Audit trail: Automatic logging of all changes
 -- 
+-- ============================================================================
+
+-- ============================================================================
+-- MIGRATION: Add 'banned' role support (run on existing DBs)
+-- ============================================================================
+-- If your DB already has the role column with the old constraint, run:
+--
+-- ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_role_check;
+-- ALTER TABLE public.profiles ADD CONSTRAINT profiles_role_check CHECK (role IN ('user', 'admin', 'banned'));
+--
+-- This enables the admin to ban users involved in fraud or money laundering.
+-- Banned users should be blocked at the middleware/auth level.
 -- ============================================================================

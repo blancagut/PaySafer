@@ -52,6 +52,41 @@
     --status-released: 152 65% 40%;
     --status-dispute: 0 72% 51%;
   }
+
+  .dark {
+    --background: 222 47% 6%;
+    --foreground: 210 20% 92%;
+    --card: 222 44% 8%;
+    --card-foreground: 210 20% 92%;
+    --popover: 222 47% 7%;
+    --popover-foreground: 210 20% 92%;
+    --primary: 160 84% 45%;
+    --primary-foreground: 222 47% 6%;
+    --secondary: 222 30% 14%;
+    --secondary-foreground: 210 20% 85%;
+    --muted: 222 30% 12%;
+    --muted-foreground: 215 15% 55%;
+    --accent: 160 84% 45%;
+    --accent-foreground: 222 47% 6%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 20% 16%;
+    --input: 222 20% 16%;
+    --ring: 160 84% 45%;
+    --chart-1: 160 84% 45%;
+    --chart-2: 200 80% 55%;
+    --chart-3: 45 90% 55%;
+    --chart-4: 0 72% 55%;
+    --chart-5: 280 60% 60%;
+    --sidebar-background: 222 47% 5%;
+    --sidebar-foreground: 210 15% 70%;
+    --sidebar-primary: 160 84% 45%;
+    --sidebar-primary-foreground: 222 47% 6%;
+    --sidebar-accent: 222 30% 12%;
+    --sidebar-accent-foreground: 210 20% 85%;
+    --sidebar-border: 222 20% 14%;
+    --sidebar-ring: 160 84% 45%;
+  }
 }
 
 @layer base {
@@ -60,5 +95,110 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/* ─── Glassmorphism System ─── */
+@layer components {
+  .glass {
+    @apply bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] shadow-lg;
+  }
+  .glass-card {
+    @apply bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] rounded-xl shadow-lg;
+  }
+  .glass-card-hover {
+    @apply glass-card transition-all duration-300 hover:bg-white/[0.07] hover:border-white/[0.14] hover:shadow-xl;
+  }
+  .glass-sidebar {
+    @apply bg-[hsl(222,47%,5%)]/80 backdrop-blur-2xl border-r border-white/[0.06];
+  }
+  .glass-topbar {
+    @apply bg-[hsl(222,47%,5%)]/60 backdrop-blur-2xl border-b border-white/[0.06];
+  }
+  .glass-input {
+    @apply bg-white/[0.04] border border-white/[0.10] rounded-lg backdrop-blur-sm
+           focus:border-[hsl(160,84%,45%)]/50 focus:ring-1 focus:ring-[hsl(160,84%,45%)]/20
+           transition-all duration-200;
+  }
+  .glass-badge {
+    @apply bg-white/[0.06] border border-white/[0.10] backdrop-blur-sm rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  .glow-emerald {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.15), 0 0 60px rgba(16, 185, 129, 0.05);
+  }
+  .glow-blue {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.15), 0 0 60px rgba(59, 130, 246, 0.05);
+  }
+  .glow-amber {
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.15), 0 0 60px rgba(245, 158, 11, 0.05);
+  }
+  .glow-red {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.15), 0 0 60px rgba(239, 68, 68, 0.05);
+  }
+  .gradient-border {
+    position: relative;
+  }
+  .gradient-border::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(59, 130, 246, 0.3), rgba(139, 92, 246, 0.2));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+}
+
+/* ─── Custom Scrollbar ─── */
+.dark ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.dark ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ─── Animations ─── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@layer utilities {
+  .animate-shimmer {
+    animation: shimmer 2s linear infinite;
+    background-size: 200% 100%;
+  }
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+  .animate-slide-up {
+    animation: slide-up 0.4s ease-out;
   }
 }

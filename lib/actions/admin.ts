@@ -29,6 +29,13 @@ export interface AdminTransactionFilters {
   sortOrder?: 'asc' | 'desc'
 }
 
+export type DisputeResolution =
+  | 'release_to_seller'
+  | 'refund_to_buyer'
+  | 'hold_funds'
+  | 'ban_both_hold'
+  | 'escalate_authorities'
+
 export interface AdminDisputeFilters {
   status?: 'under_review' | 'resolved' | 'closed'
   search?: string
@@ -374,7 +381,7 @@ const ADMIN_ALLOWED_TRANSITIONS: Record<string, TransactionStatus[]> = {
 const TERMINAL_STATES: TransactionStatus[] = ['released', 'cancelled']
 
 /** Returns which actions the admin can take on a given transaction status */
-export function getAdminAllowedActions(status: TransactionStatus): TransactionStatus[] {
+export async function getAdminAllowedActions(status: TransactionStatus): Promise<TransactionStatus[]> {
   return ADMIN_ALLOWED_TRANSITIONS[status] || []
 }
 
@@ -556,14 +563,25 @@ export async function adminRefundTransaction(transactionId: string, reason?: str
   return { data: updated }
 }
 
-/** Admin: Resolve a dispute */
+/**
+ * Admin: Resolve a dispute
+ *
+ * ONLY the super admin decides where funds go. Options:
+ * - release_to_seller  → Release escrowed funds to seller
+ * - refund_to_buyer    → Refund escrowed funds to buyer
+ * - hold_funds         → Keep funds frozen in platform until further notice
+ * - ban_both_hold      → Ban both parties + freeze funds (suspected money laundering)
+ * - escalate_authorities → Freeze funds + flag for law enforcement / compliance
+ */
 export async function adminResolveDispute(
   disputeId: string,
-  resolution: 'release_to_seller' | 'refund_to_buyer',
+  resolution: DisputeResolution,
   reason: string
 ) {
   const { error, user } = await verifyAdmin()
   if (error || !user) return { error: error || 'Not authorized' }
+
+  if (!reason.trim()) return { error: 'Reason is required for all dispute actions' }
 
   const supabase = await createClient()
 
@@ -579,7 +597,7 @@ export async function adminResolveDispute(
   }
 
   if (dispute.status !== 'under_review') {
-    return { error: `Dispute is already ${dispute.status}. Cannot resolve again.` }
+    return { error: `Dispute is already ${dispute.status}. Cannot act on it again.` }
   }
 
   const transaction = dispute.transaction as any
@@ -587,22 +605,49 @@ export async function adminResolveDispute(
     return { error: 'Associated transaction not found' }
   }
 
-  // Apply resolution to transaction
-  if (resolution === 'release_to_seller') {
-    const result = await adminReleaseTransaction(transaction.id, reason)
-    if (result.error) return result
-  } else {
-    const result = await adminRefundTransaction(transaction.id, reason)
-    if (result.error) return result
+  // ─── Apply resolution based on admin decision ───
+  let disputeStatus: string = 'resolved'
+  let resolutionLabel = resolution
+
+  switch (resolution) {
+    case 'release_to_seller': {
+      const result = await adminReleaseTransaction(transaction.id, reason)
+      if (result.error) return result
+      break
+    }
+    case 'refund_to_buyer': {
+      const result = await adminRefundTransaction(transaction.id, reason)
+      if (result.error) return result
+      break
+    }
+    case 'hold_funds': {
+      // Funds stay in escrow/dispute — transaction status remains "dispute".
+      // No money moves. Admin will decide later.
+      disputeStatus = 'closed'
+      break
+    }
+    case 'ban_both_hold': {
+      // Ban both buyer and seller, freeze funds
+      if (transaction.buyer_id) await adminBanUser(transaction.buyer_id, `Banned: dispute ${disputeId} — ${reason}`)
+      if (transaction.seller_id) await adminBanUser(transaction.seller_id, `Banned: dispute ${disputeId} — ${reason}`)
+      disputeStatus = 'closed'
+      break
+    }
+    case 'escalate_authorities': {
+      // Freeze everything, flag for law enforcement
+      if (transaction.buyer_id) await adminBanUser(transaction.buyer_id, `Escalated to authorities: dispute ${disputeId}`)
+      if (transaction.seller_id) await adminBanUser(transaction.seller_id, `Escalated to authorities: dispute ${disputeId}`)
+      disputeStatus = 'closed'
+      break
+    }
   }
 
-  // The dispute was already resolved in the release/refund functions above,
-  // but update with the specific reason if not already done
+  // Update dispute record
   await supabase
     .from('disputes')
     .update({
-      status: 'resolved',
-      resolution: reason,
+      status: disputeStatus,
+      resolution: `[${resolution}] ${reason}`,
       resolved_by: 'admin',
       resolved_at: new Date().toISOString(),
     })
@@ -610,18 +655,298 @@ export async function adminResolveDispute(
 
   // Audit log
   await writeAuditLog({
-    eventType: 'admin.dispute.resolve',
+    eventType: `admin.dispute.${resolution}`,
     actorId: user.id,
     actorRole: 'admin',
     targetTable: 'disputes',
     targetId: disputeId,
-    oldValues: { status: 'under_review' },
-    newValues: { status: 'resolved', resolution, reason },
+    oldValues: { status: 'under_review', transaction_status: transaction.status },
+    newValues: { status: disputeStatus, resolution, reason, transaction_id: transaction.id },
   })
 
   revalidatePath('/admin')
   revalidatePath('/disputes')
   revalidatePath(`/disputes/${disputeId}`)
 
+  return { data: { success: true, resolution } }
+}
+
+/**
+ * Admin: Ban a user (set role to 'banned')
+ * Banned users cannot log in or perform any actions.
+ * Used for fraud, money laundering, or compliance violations.
+ */
+// Super admin email — this account can NEVER be banned or demoted
+const SUPER_ADMIN_EMAIL = 'renzocarlosme@gmail.com'
+
+export async function adminBanUser(userId: string, reason?: string) {
+  const { error, user } = await verifyAdmin()
+  if (error || !user) return { error: error || 'Not authorized' }
+
+  if (userId === user.id) return { error: 'Cannot ban yourself' }
+
+  const supabase = await createClient()
+
+  // Get current profile
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, email')
+    .eq('id', userId)
+    .single()
+
+  if (!profile) return { error: 'User not found' }
+  if (profile.email === SUPER_ADMIN_EMAIL) return { error: 'Cannot ban the super admin account' }
+  if (profile.role === 'banned') return { error: 'User is already banned' }
+  if (profile.role === 'admin') return { error: 'Cannot ban another admin. Demote them first.' }
+
+  // Set role to banned
+  const { error: updateError } = await supabase
+    .from('profiles')
+    .update({ role: 'banned', updated_at: new Date().toISOString() })
+    .eq('id', userId)
+
+  if (updateError) return { error: updateError.message }
+
+  await writeAuditLog({
+    eventType: 'admin.user.ban',
+    actorId: user.id,
+    actorRole: 'admin',
+    targetTable: 'profiles',
+    targetId: userId,
+    oldValues: { role: profile.role },
+    newValues: { role: 'banned', reason: reason || 'Admin banned user' },
+  })
+
+  revalidatePath('/admin')
   return { data: { success: true } }
+}
+
+/**
+ * Admin: Unban a user (restore role to 'user')
+ */
+export async function adminUnbanUser(userId: string) {
+  const { error, user } = await verifyAdmin()
+  if (error || !user) return { error: error || 'Not authorized' }
+
+  const supabase = await createClient()
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', userId)
+    .single()
+
+  if (!profile) return { error: 'User not found' }
+  if (profile.role !== 'banned') return { error: 'User is not banned' }
+
+  const { error: updateError } = await supabase
+    .from('profiles')
+    .update({ role: 'user', updated_at: new Date().toISOString() })
+    .eq('id', userId)
+
+  if (updateError) return { error: updateError.message }
+
+  await writeAuditLog({
+    eventType: 'admin.user.unban',
+    actorId: user.id,
+    actorRole: 'admin',
+    targetTable: 'profiles',
+    targetId: userId,
+    oldValues: { role: 'banned' },
+    newValues: { role: 'user' },
+  })
+
+  revalidatePath('/admin')
+  return { data: { success: true } }
+}
+
+// =============================================================================
+// ADMIN: OFFERS (paginated)
+// =============================================================================
+
+export interface AdminOfferFilters {
+  status?: 'pending' | 'accepted' | 'expired' | 'cancelled'
+  search?: string
+  page?: number
+  pageSize?: number
+}
+
+export async function getAdminOffers(filters: AdminOfferFilters = {}) {
+  const { error, user } = await verifyAdmin()
+  if (error || !user) return { error: error || 'Not authorized' }
+
+  const supabase = await createClient()
+
+  const page = filters.page || 1
+  const pageSize = Math.min(filters.pageSize || 20, 100)
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+
+  let query = supabase
+    .from('offers')
+    .select(`
+      *,
+      creator:profiles!offers_creator_id_fkey(id, email, full_name)
+    `, { count: 'exact' })
+
+  if (filters.status) query = query.eq('status', filters.status)
+  if (filters.search) {
+    query = query.or(`title.ilike.%${filters.search}%,description.ilike.%${filters.search}%`)
+  }
+
+  query = query.order('created_at', { ascending: false }).range(from, to)
+
+  const { data, error: queryError, count } = await query
+  if (queryError) return { error: queryError.message }
+
+  return {
+    data: data || [],
+    pagination: { page, pageSize, total: count || 0, totalPages: Math.ceil((count || 0) / pageSize) },
+  }
+}
+
+// =============================================================================
+// ADMIN: USER MANAGEMENT (promote, demote, suspend)
+// =============================================================================
+
+export async function adminUpdateUserRole(userId: string, newRole: 'user' | 'admin') {
+  const { error, user } = await verifyAdmin()
+  if (error || !user) return { error: error || 'Not authorized' }
+
+  if (userId === user.id) return { error: 'Cannot change your own role' }
+
+  const supabase = await createClient()
+
+  const { data: target, error: fetchErr } = await supabase
+    .from('profiles')
+    .select('id, role, email')
+    .eq('id', userId)
+    .single()
+
+  if (fetchErr || !target) return { error: 'User not found' }
+  if (target.email === SUPER_ADMIN_EMAIL && newRole !== 'admin') {
+    return { error: 'Cannot demote the super admin account' }
+  }
+
+  const { error: updateErr } = await supabase
+    .from('profiles')
+    .update({ role: newRole, updated_at: new Date().toISOString() })
+    .eq('id', userId)
+
+  if (updateErr) return { error: updateErr.message }
+
+  await writeAuditLog({
+    eventType: `admin.user.${newRole === 'admin' ? 'promote' : 'demote'}`,
+    actorId: user.id,
+    actorRole: 'admin',
+    targetTable: 'profiles',
+    targetId: userId,
+    oldValues: { role: target.role },
+    newValues: { role: newRole },
+  })
+
+  revalidatePath('/admin')
+  return { data: { success: true } }
+}
+
+export async function adminCancelOffer(offerId: string, reason?: string) {
+  const { error, user } = await verifyAdmin()
+  if (error || !user) return { error: error || 'Not authorized' }
+
+  const supabase = await createClient()
+
+  const { data: offer, error: fetchErr } = await supabase
+    .from('offers')
+    .select('*')
+    .eq('id', offerId)
+    .single()
+
+  if (fetchErr || !offer) return { error: 'Offer not found' }
+  if (offer.status !== 'pending') return { error: `Cannot cancel offer in "${offer.status}" state` }
+
+  const { error: updateErr } = await supabase
+    .from('offers')
+    .update({ status: 'cancelled' })
+    .eq('id', offerId)
+
+  if (updateErr) return { error: updateErr.message }
+
+  await writeAuditLog({
+    eventType: 'admin.offer.cancel',
+    actorId: user.id,
+    actorRole: 'admin',
+    targetTable: 'offers',
+    targetId: offerId,
+    oldValues: { status: offer.status },
+    newValues: { status: 'cancelled', reason: reason || 'Admin cancelled' },
+  })
+
+  revalidatePath('/admin')
+  return { data: { success: true } }
+}
+
+/** Admin: Get platform-wide revenue metrics (aggregated from transactions) */
+export async function getAdminRevenueMetrics() {
+  const { error, user } = await verifyAdmin()
+  if (error || !user) return { error: error || 'Not authorized' }
+
+  const supabase = await createClient()
+
+  const { data: txns, error: txnErr } = await supabase
+    .from('transactions')
+    .select('amount, status, currency, created_at')
+
+  if (txnErr) return { error: txnErr.message }
+
+  const all = txns || []
+  const now = new Date()
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000)
+  const sixtyDaysAgo = new Date(now.getTime() - 60 * 86400000)
+
+  const last30 = all.filter(t => new Date(t.created_at) >= thirtyDaysAgo)
+  const prev30 = all.filter(t => {
+    const d = new Date(t.created_at)
+    return d >= sixtyDaysAgo && d < thirtyDaysAgo
+  })
+
+  const totalVolume = all.reduce((s, t) => s + Number(t.amount), 0)
+  const last30Volume = last30.reduce((s, t) => s + Number(t.amount), 0)
+  const prev30Volume = prev30.reduce((s, t) => s + Number(t.amount), 0)
+  const volumeChange = prev30Volume > 0 ? ((last30Volume - prev30Volume) / prev30Volume) * 100 : 0
+
+  const released = all.filter(t => t.status === 'released')
+  const releasedVolume = released.reduce((s, t) => s + Number(t.amount), 0)
+  const successRate = all.length > 0 ? (released.length / all.length) * 100 : 0
+
+  // Monthly breakdown for charts (last 12 months)
+  const monthly: Record<string, { month: string; volume: number; count: number; released: number }> = {}
+  all.forEach(t => {
+    const d = new Date(t.created_at)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const label = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+    if (!monthly[key]) monthly[key] = { month: label, volume: 0, count: 0, released: 0 }
+    monthly[key].volume += Number(t.amount)
+    monthly[key].count += 1
+    if (t.status === 'released') monthly[key].released += Number(t.amount)
+  })
+
+  // Currency breakdown
+  const currencies: Record<string, number> = {}
+  all.forEach(t => {
+    currencies[t.currency] = (currencies[t.currency] || 0) + Number(t.amount)
+  })
+
+  return {
+    data: {
+      totalVolume,
+      releasedVolume,
+      last30Volume,
+      volumeChange: Math.round(volumeChange),
+      successRate: Math.round(successRate),
+      totalTransactions: all.length,
+      last30Transactions: last30.length,
+      monthlyData: Object.values(monthly).slice(-12),
+      currencyBreakdown: Object.entries(currencies).map(([currency, amount]) => ({ currency, amount })),
+    }
+  }
 }

@@ -24,9 +24,9 @@ import { addDisputeMessage } from "@/lib/actions/disputes"
 import { toast } from "sonner"
 
 const statusConfig: Record<string, { label: string; className: string; description: string }> = {
-  under_review: { label: "Under Review", className: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400", description: "Our team is reviewing this case" },
-  resolved: { label: "Resolved", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400", description: "This dispute has been resolved" },
-  closed: { label: "Closed", className: "bg-muted text-muted-foreground", description: "This dispute has been closed" },
+  under_review: { label: "Under Review", className: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400", description: "Funds are frozen. The admin is reviewing this case." },
+  resolved: { label: "Resolved", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400", description: "The admin has made a final decision on this dispute." },
+  closed: { label: "Closed — Funds Held", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", description: "Funds are frozen by the admin and held in the platform." },
 }
 
 interface Props {
@@ -243,9 +243,11 @@ export function DisputeDetailClient({ dispute, messages, currentUserId, buyerNam
               <div className="flex items-start gap-3">
                 <Shield className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-0.5" />
                 <div className="text-sm">
-                  <p className="font-medium text-foreground">Fair Resolution</p>
+                  <p className="font-medium text-foreground">Admin-Only Resolution</p>
                   <p className="text-muted-foreground mt-1">
-                    We review all disputes neutrally. Both parties have equal opportunity to present their case.
+                    Only the platform administrator decides where funds go. Both parties can present evidence here.
+                    Funds remain frozen in the platform until a decision is made. In cases of suspected fraud,
+                    funds may be held indefinitely or forwarded to authorities.
                   </p>
                 </div>
               </div>

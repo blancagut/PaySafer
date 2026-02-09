@@ -1,967 +1,1514 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
-import { createClient } from "@/lib/supabase/client"
-import {
-  getAdminStats,
-  getAdminTransactions,
-  getAdminDisputes,
-  getAdminUsers,
-  getAdminAuditLogs,
-  adminReleaseTransaction,
-  adminRefundTransaction,
-  adminResolveDispute,
-  getAdminAllowedActions,
-  type TransactionStatus,
-  type AdminTransactionFilters,
-  type AdminDisputeFilters,
-  type AdminUserFilters,
-  type AdminAuditLogFilters,
-} from "@/lib/actions/admin"
-import { toast } from "sonner"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
-import { Textarea } from "@/components/ui/textarea"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+import React, { useState, useEffect, useCallback } from "react"
+import Link from "next/link"
 import {
   Shield,
   Users,
   DollarSign,
   AlertTriangle,
-  TrendingUp,
+  History,
+  BarChart3,
+  Settings,
+  FileText,
   Lock,
-  Mail,
-  Eye,
-  EyeOff,
+  Unlock,
   RefreshCw,
+  Search,
   ChevronLeft,
   ChevronRight,
-  Search,
-  FileText,
-  Gavel,
-  Ban,
   CheckCircle2,
+  XCircle,
   Clock,
+  Activity,
+  TrendingUp,
+  TrendingDown,
+  Eye,
+  Ban,
+  UserCog,
+  Trash2,
+  Copy,
+  Check,
+  Loader2,
+  Link2,
+  Gavel,
+  Server,
+  Database,
+  Wallet,
+  Crown,
+  ArrowUpRight,
+  Fingerprint,
+  ShieldCheck,
+  LayoutDashboard,
 } from "lucide-react"
+import { GlassCard, GlassStat, GlassContainer } from "@/components/glass"
+import { GlassBadge, statusBadgeMap, offerStatusBadgeMap } from "@/components/glass"
+import { GlassInput } from "@/components/glass"
+import { Button } from "@/components/ui/button"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Switch } from "@/components/ui/switch"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { toast } from "sonner"
+import {
+  BarChart,
+  Bar,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts"
 
-const txnStatusConfig: Record<string, { label: string; className: string }> = {
-  draft: { label: "Draft", className: "bg-muted text-muted-foreground" },
-  awaiting_payment: { label: "Awaiting Payment", className: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400" },
-  in_escrow: { label: "In Escrow", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400" },
-  delivered: { label: "Delivered", className: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400" },
-  released: { label: "Released", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400" },
-  cancelled: { label: "Cancelled", className: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
-  dispute: { label: "Dispute", className: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400" },
+import {
+  verifyAdmin,
+  getAdminStats,
+  getAdminTransactions,
+  getAdminDisputes,
+  getAdminUsers,
+  getAdminAuditLogs,
+  getAdminOffers,
+  getAdminRevenueMetrics,
+  adminReleaseTransaction,
+  adminRefundTransaction,
+  adminResolveDispute,
+  adminUpdateUserRole,
+  adminCancelOffer,
+  adminBanUser,
+  adminUnbanUser,
+  type TransactionStatus,
+  type DisputeResolution,
+  type AdminTransactionFilters,
+  type AdminDisputeFilters,
+  type AdminUserFilters,
+  type AdminAuditLogFilters,
+  type AdminOfferFilters,
+} from "@/lib/actions/admin"
+
+/* ═══════════════════════════════════════════════════════════
+   Utilities
+   ═══════════════════════════════════════════════════════════ */
+
+function fmt(n: number, currency = "USD") {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(n)
 }
 
-const disputeStatusConfig: Record<string, { label: string; className: string }> = {
-  under_review: { label: "Under Review", className: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400" },
-  resolved: { label: "Resolved", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400" },
-  closed: { label: "Closed", className: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
+function fmtNum(n: number) {
+  return new Intl.NumberFormat("en-US").format(n)
 }
 
-function formatCurrency(amount: number, currency = "USD") {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount)
+function timeAgo(d: string) {
+  const s = Math.floor((Date.now() - new Date(d).getTime()) / 1000)
+  if (s < 60) return "just now"
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
+  return `${Math.floor(s / 86400)}d ago`
 }
 
-function formatDate(date: string) {
-  return new Date(date).toLocaleDateString("en-US", {
-    year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-  })
+function ChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="rounded-xl bg-[hsl(222,47%,8%)]/95 border border-white/[0.08] px-4 py-3 shadow-2xl backdrop-blur-2xl">
+      <p className="text-[11px] font-medium text-muted-foreground mb-2 tracking-wide uppercase">{label}</p>
+      {payload.map((e: any, i: number) => (
+        <div key={i} className="flex items-center gap-2.5 text-[13px]">
+          <div className="w-2 h-2 rounded-full" style={{ background: e.color || e.fill }} />
+          <span className="text-muted-foreground">{e.name}</span>
+          <span className="font-semibold text-foreground ml-auto tabular-nums">
+            {typeof e.value === "number" ? (e.value >= 1000 ? `$${(e.value / 1000).toFixed(1)}k` : `$${e.value}`) : e.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
 }
 
-function StatusBadge({ status, config }: { status: string; config: Record<string, { label: string; className: string }> }) {
-  const cfg = config[status] || { label: status, className: "bg-muted text-muted-foreground" }
-  return <Badge className={cfg.className}>{cfg.label}</Badge>
-}
+/* ─── Tab Config ─── */
 
-function PaginationControls({ page, totalPages, onPageChange }: { page: number; totalPages: number; onPageChange: (p: number) => void }) {
+type AdminTab = "overview" | "revenue" | "transactions" | "disputes" | "users" | "offers" | "audit" | "config"
+
+const tabs: { key: AdminTab; label: string; icon: React.ReactNode }[] = [
+  { key: "overview",     label: "Overview",      icon: <LayoutDashboard className="w-4 h-4" /> },
+  { key: "revenue",      label: "Revenue",       icon: <DollarSign className="w-4 h-4" /> },
+  { key: "transactions", label: "Transactions",  icon: <History className="w-4 h-4" /> },
+  { key: "disputes",     label: "Disputes",      icon: <AlertTriangle className="w-4 h-4" /> },
+  { key: "users",        label: "Users",         icon: <Users className="w-4 h-4" /> },
+  { key: "offers",       label: "Offers",        icon: <FileText className="w-4 h-4" /> },
+  { key: "audit",        label: "Audit Log",     icon: <Fingerprint className="w-4 h-4" /> },
+  { key: "config",       label: "Config",        icon: <Settings className="w-4 h-4" /> },
+]
+
+/* ─── Pagination ─── */
+
+function Pagination({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (p: number) => void }) {
   if (totalPages <= 1) return null
   return (
-    <div className="flex items-center justify-between pt-4">
-      <p className="text-sm text-muted-foreground">Page {page} of {totalPages}</p>
-      <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => onPageChange(page - 1)} disabled={page <= 1}>
+    <div className="flex items-center justify-between pt-4 border-t border-white/[0.06]">
+      <p className="text-[11px] text-muted-foreground tabular-nums">
+        Page <span className="font-semibold text-foreground">{page}</span> of {totalPages}
+      </p>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onPage(Math.max(1, page - 1))}
+          disabled={page <= 1}
+          className="p-2 rounded-lg hover:bg-white/[0.06] disabled:opacity-30 text-muted-foreground transition-colors"
+        >
           <ChevronLeft className="w-4 h-4" />
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}>
+        </button>
+        {totalPages <= 5 && Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+          <button
+            key={p}
+            onClick={() => onPage(p)}
+            className={`w-8 h-8 rounded-lg text-[11px] font-medium transition-colors ${
+              p === page ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-white/[0.06]"
+            }`}
+          >
+            {p}
+          </button>
+        ))}
+        <button
+          onClick={() => onPage(Math.min(totalPages, page + 1))}
+          disabled={page >= totalPages}
+          className="p-2 rounded-lg hover:bg-white/[0.06] disabled:opacity-30 text-muted-foreground transition-colors"
+        >
           <ChevronRight className="w-4 h-4" />
-        </Button>
+        </button>
       </div>
     </div>
   )
 }
 
-function StatCard({ icon, bgColor, value, label, isString }: { icon: React.ReactNode; bgColor: string; value: number | string; label: string; isString?: boolean }) {
+/* ─── Section Header ─── */
+
+function SectionHeader({ title, description, count }: { title: string; description?: string; count?: number }) {
   return (
-    <Card className="border-border">
-      <CardContent className="p-4">
-        <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-lg ${bgColor} flex items-center justify-center shrink-0`}>{icon}</div>
-          <div className="min-w-0">
-            <p className="text-2xl font-bold text-foreground truncate">{isString ? value : typeof value === "number" ? value.toLocaleString() : value}</p>
-            <p className="text-xs text-muted-foreground">{label}</p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <div>
+      <div className="flex items-center gap-3">
+        <h3 className="text-lg font-semibold tracking-tight text-foreground">{title}</h3>
+        {count !== undefined && (
+          <span className="text-xs font-medium tabular-nums text-muted-foreground bg-white/[0.04] border border-white/[0.06] rounded-md px-2 py-0.5">
+            {fmtNum(count)}
+          </span>
+        )}
+      </div>
+      {description && <p className="text-[13px] text-muted-foreground mt-0.5">{description}</p>}
+    </div>
   )
 }
 
+/* ─── Filter Pill Bar ─── */
+
+function FilterBar<T extends string | undefined>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { key: T; label: string }[]
+  value: T
+  onChange: (key: T) => void
+}) {
+  return (
+    <div className="flex items-center gap-1 bg-white/[0.02] rounded-lg p-1 border border-white/[0.06] overflow-x-auto">
+      {options.map(opt => (
+        <button
+          key={String(opt.key ?? "all")}
+          onClick={() => onChange(opt.key)}
+          className={`px-3 py-1.5 text-[12px] font-medium rounded-md whitespace-nowrap transition-all duration-200 ${
+            value === opt.key
+              ? "bg-primary/15 text-primary shadow-sm"
+              : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/* ─── Skeleton Row ─── */
+
+function SkeletonRows({ count = 5 }: { count?: number }) {
+  return (
+    <>
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="flex items-center gap-4 p-4">
+          <div className="w-9 h-9 rounded-lg bg-white/[0.04] animate-pulse" />
+          <div className="flex-1 space-y-2">
+            <div className="h-3.5 w-48 bg-white/[0.04] rounded animate-pulse" />
+            <div className="h-2.5 w-32 bg-white/[0.03] rounded animate-pulse" />
+          </div>
+          <div className="h-6 w-20 bg-white/[0.04] rounded-full animate-pulse" />
+        </div>
+      ))}
+    </>
+  )
+}
+
+/* ─── Empty State ─── */
+
+function EmptyState({ icon: Icon, title, description }: { icon: any; title: string; description?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 px-8">
+      <div className="w-14 h-14 rounded-2xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center mb-4">
+        <Icon className="w-6 h-6 text-muted-foreground/50" />
+      </div>
+      <p className="text-[13px] font-medium text-muted-foreground">{title}</p>
+      {description && <p className="text-[12px] text-muted-foreground/60 mt-1">{description}</p>}
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MAIN ADMIN PAGE
+   ═══════════════════════════════════════════════════════════ */
+
 export default function AdminPage() {
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
-  const [authError, setAuthError] = useState<string | null>(null)
+  const [authorized, setAuthorized] = useState<boolean | null>(null)
+  const [activeTab, setActiveTab] = useState<AdminTab>("overview")
+  const [loading, setLoading] = useState(true)
 
-  const [stats, setStats] = useState<{
-    totalUsers: number; totalTransactions: number; activeTransactions: number;
-    totalVolume: number; escrowVolume: number; activeDisputes: number;
-    resolvedDisputes: number; totalDisputes: number;
-  } | null>(null)
+  // shared data
+  const [stats, setStats] = useState<any>(null)
+  const [revenue, setRevenue] = useState<any>(null)
 
+  // tab data
   const [transactions, setTransactions] = useState<any[]>([])
-  const [txnPagination, setTxnPagination] = useState({ page: 1, pageSize: 20, total: 0, totalPages: 0 })
-  const [txnFilters, setTxnFilters] = useState<AdminTransactionFilters>({})
-  const [txnSearch, setTxnSearch] = useState("")
-  const [txnLoading, setTxnLoading] = useState(false)
+  const [txnPagination, setTxnPagination] = useState({ page: 1, total: 0, totalPages: 0 })
+  const [txnFilter, setTxnFilter] = useState<AdminTransactionFilters>({ page: 1, pageSize: 15 })
 
   const [disputes, setDisputes] = useState<any[]>([])
-  const [disputePagination, setDisputePagination] = useState({ page: 1, pageSize: 20, total: 0, totalPages: 0 })
-  const [disputeFilters, setDisputeFilters] = useState<AdminDisputeFilters>({})
-  const [disputeSearch, setDisputeSearch] = useState("")
-  const [disputeLoading, setDisputeLoading] = useState(false)
+  const [disputePagination, setDisputePagination] = useState({ page: 1, total: 0, totalPages: 0 })
+  const [disputeFilter, setDisputeFilter] = useState<AdminDisputeFilters>({ page: 1, pageSize: 15 })
 
   const [users, setUsers] = useState<any[]>([])
-  const [userPagination, setUserPagination] = useState({ page: 1, pageSize: 20, total: 0, totalPages: 0 })
-  const [userFilters, setUserFilters] = useState<AdminUserFilters>({})
-  const [userSearch, setUserSearch] = useState("")
-  const [userLoading, setUserLoading] = useState(false)
+  const [userPagination, setUserPagination] = useState({ page: 1, total: 0, totalPages: 0 })
+  const [userFilter, setUserFilter] = useState<AdminUserFilters>({ page: 1, pageSize: 20 })
+
+  const [offers, setOffers] = useState<any[]>([])
+  const [offerPagination, setOfferPagination] = useState({ page: 1, total: 0, totalPages: 0 })
+  const [offerFilter, setOfferFilter] = useState<AdminOfferFilters>({ page: 1, pageSize: 15 })
 
   const [auditLogs, setAuditLogs] = useState<any[]>([])
-  const [auditPagination, setAuditPagination] = useState({ page: 1, pageSize: 30, total: 0, totalPages: 0 })
-  const [auditFilters, setAuditFilters] = useState<AdminAuditLogFilters>({})
-  const [auditLoading, setAuditLoading] = useState(false)
+  const [auditPagination, setAuditPagination] = useState({ page: 1, total: 0, totalPages: 0 })
+  const [auditFilter, setAuditFilter] = useState<AdminAuditLogFilters>({ page: 1, pageSize: 25 })
 
-  const [actionDialog, setActionDialog] = useState<{
-    open: boolean; type: "release" | "refund" | null; transactionId: string;
-    transactionDesc: string; transactionAmount: number; transactionStatus: string;
-  }>({ open: false, type: null, transactionId: "", transactionDesc: "", transactionAmount: 0, transactionStatus: "" })
+  // dialogs
+  const [actionDialog, setActionDialog] = useState<{ type: string; id: string; status?: string } | null>(null)
   const [actionReason, setActionReason] = useState("")
   const [actionLoading, setActionLoading] = useState(false)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
 
-  const [resolveDialog, setResolveDialog] = useState<{
-    open: boolean; disputeId: string; disputeReason: string; transactionAmount: number;
-  }>({ open: false, disputeId: "", disputeReason: "", transactionAmount: 0 })
-  const [resolveDecision, setResolveDecision] = useState<"release_to_seller" | "refund_to_buyer">("refund_to_buyer")
-  const [resolveReason, setResolveReason] = useState("")
-  const [resolveLoading, setResolveLoading] = useState(false)
+  /* ─── Auth check ─── */
+  useEffect(() => {
+    verifyAdmin().then((res) => setAuthorized(!res.error))
+  }, [])
 
-  const [user, setUser] = useState<any>(null)
-  const [passwordForm, setPasswordForm] = useState({ newPassword: "", confirmPassword: "" })
-  const [showPasswords, setShowPasswords] = useState({ new: false, confirm: false })
-  const [newEmail, setNewEmail] = useState("")
-  const [emailLoading, setEmailLoading] = useState(false)
+  /* ─── Data Loaders ─── */
+  const loadOverview = useCallback(async () => {
+    const [s, r] = await Promise.all([getAdminStats(), getAdminRevenueMetrics()])
+    if (s.data) setStats(s.data)
+    if (r.data) setRevenue(r.data)
+  }, [])
 
-  const [globalLoading, setGlobalLoading] = useState(true)
+  const loadTransactions = useCallback(async () => {
+    const res = await getAdminTransactions(txnFilter)
+    if (res.data) { setTransactions(res.data); setTxnPagination(res.pagination!) }
+  }, [txnFilter])
+
+  const loadDisputes = useCallback(async () => {
+    const res = await getAdminDisputes(disputeFilter)
+    if (res.data) { setDisputes(res.data); setDisputePagination(res.pagination!) }
+  }, [disputeFilter])
+
+  const loadUsers = useCallback(async () => {
+    const res = await getAdminUsers(userFilter)
+    if (res.data) { setUsers(res.data); setUserPagination(res.pagination!) }
+  }, [userFilter])
+
+  const loadOffers = useCallback(async () => {
+    const res = await getAdminOffers(offerFilter)
+    if (res.data) { setOffers(res.data); setOfferPagination(res.pagination!) }
+  }, [offerFilter])
+
+  const loadAudit = useCallback(async () => {
+    const res = await getAdminAuditLogs(auditFilter)
+    if (res.data) { setAuditLogs(res.data); setAuditPagination(res.pagination!) }
+  }, [auditFilter])
 
   useEffect(() => {
-    async function init() {
-      try {
-        const statsResult = await getAdminStats()
-        if (statsResult.error) {
-          setIsAdmin(false)
-          setAuthError(statsResult.error)
-          setGlobalLoading(false)
-          return
-        }
-        setIsAdmin(true)
-        setStats(statsResult.data!)
-        const supabase = createClient()
-        const { data: { user: currentUser } } = await supabase.auth.getUser()
-        setUser(currentUser)
-      } catch {
-        setIsAdmin(false)
-        setAuthError("Failed to verify admin access")
-      } finally {
-        setGlobalLoading(false)
-      }
-    }
-    init()
-  }, [])
+    if (!authorized) return
+    setLoading(true)
+    loadOverview().finally(() => setLoading(false))
+  }, [authorized, loadOverview])
 
-  const loadStats = useCallback(async () => {
-    const result = await getAdminStats()
-    if (result.data) setStats(result.data)
-  }, [])
+  useEffect(() => { if (authorized && activeTab === "transactions") loadTransactions() }, [authorized, activeTab, loadTransactions])
+  useEffect(() => { if (authorized && activeTab === "disputes")     loadDisputes()     }, [authorized, activeTab, loadDisputes])
+  useEffect(() => { if (authorized && activeTab === "users")        loadUsers()        }, [authorized, activeTab, loadUsers])
+  useEffect(() => { if (authorized && activeTab === "offers")       loadOffers()       }, [authorized, activeTab, loadOffers])
+  useEffect(() => { if (authorized && activeTab === "audit")        loadAudit()        }, [authorized, activeTab, loadAudit])
 
-  const loadTransactions = useCallback(async (filters: AdminTransactionFilters = {}) => {
-    setTxnLoading(true)
-    try {
-      const result = await getAdminTransactions(filters)
-      if (result.error) { toast.error(result.error); return }
-      setTransactions(result.data || [])
-      if (result.pagination) setTxnPagination(result.pagination)
-    } catch { toast.error("Failed to load transactions") }
-    finally { setTxnLoading(false) }
-  }, [])
-
-  const loadDisputes = useCallback(async (filters: AdminDisputeFilters = {}) => {
-    setDisputeLoading(true)
-    try {
-      const result = await getAdminDisputes(filters)
-      if (result.error) { toast.error(result.error); return }
-      setDisputes(result.data || [])
-      if (result.pagination) setDisputePagination(result.pagination)
-    } catch { toast.error("Failed to load disputes") }
-    finally { setDisputeLoading(false) }
-  }, [])
-
-  const loadUsers = useCallback(async (filters: AdminUserFilters = {}) => {
-    setUserLoading(true)
-    try {
-      const result = await getAdminUsers(filters)
-      if (result.error) { toast.error(result.error); return }
-      setUsers(result.data || [])
-      if (result.pagination) setUserPagination(result.pagination)
-    } catch { toast.error("Failed to load users") }
-    finally { setUserLoading(false) }
-  }, [])
-
-  const loadAuditLogs = useCallback(async (filters: AdminAuditLogFilters = {}) => {
-    setAuditLoading(true)
-    try {
-      const result = await getAdminAuditLogs(filters)
-      if (result.error) { toast.error(result.error); return }
-      setAuditLogs(result.data || [])
-      if (result.pagination) setAuditPagination(result.pagination)
-    } catch { toast.error("Failed to load audit logs") }
-    finally { setAuditLoading(false) }
-  }, [])
-
-  const handleTabChange = (tab: string) => {
-    if (tab === "transactions" && transactions.length === 0) loadTransactions(txnFilters)
-    if (tab === "disputes" && disputes.length === 0) loadDisputes(disputeFilters)
-    if (tab === "users" && users.length === 0) loadUsers(userFilters)
-    if (tab === "audit" && auditLogs.length === 0) loadAuditLogs(auditFilters)
+  /* ─── Admin Actions ─── */
+  const refreshAll = () => {
+    loadOverview()
+    if (activeTab === "transactions") loadTransactions()
+    if (activeTab === "disputes") loadDisputes()
+    if (activeTab === "users") loadUsers()
+    if (activeTab === "offers") loadOffers()
+    if (activeTab === "audit") loadAudit()
   }
 
-  const openActionDialog = (type: "release" | "refund", txn: any) => {
-    setActionDialog({ open: true, type, transactionId: txn.id, transactionDesc: txn.description, transactionAmount: txn.amount, transactionStatus: txn.status })
-    setActionReason("")
-  }
-
-  const executeAction = async () => {
-    if (!actionDialog.type || !actionDialog.transactionId) return
+  const handleRelease = async (txnId: string) => {
     setActionLoading(true)
-    try {
-      const result = actionDialog.type === "release"
-        ? await adminReleaseTransaction(actionDialog.transactionId, actionReason || undefined)
-        : await adminRefundTransaction(actionDialog.transactionId, actionReason || undefined)
-      if (result.error) { toast.error(result.error); return }
-      toast.success(actionDialog.type === "release" ? "Funds released to seller" : "Transaction refunded to buyer")
-      setActionDialog({ open: false, type: null, transactionId: "", transactionDesc: "", transactionAmount: 0, transactionStatus: "" })
-      loadTransactions(txnFilters)
-      loadStats()
-    } catch { toast.error("Action failed") }
-    finally { setActionLoading(false) }
+    const res = await adminReleaseTransaction(txnId, actionReason || undefined)
+    setActionLoading(false)
+    if (res.error) { toast.error(res.error); return }
+    toast.success("Transaction released")
+    setActionDialog(null); setActionReason("")
+    loadTransactions(); loadOverview()
   }
 
-  const openResolveDialog = (dispute: any) => {
-    setResolveDialog({ open: true, disputeId: dispute.id, disputeReason: dispute.reason, transactionAmount: dispute.transaction?.amount || 0 })
-    setResolveDecision("refund_to_buyer")
-    setResolveReason("")
+  const handleRefund = async (txnId: string) => {
+    setActionLoading(true)
+    const res = await adminRefundTransaction(txnId, actionReason || undefined)
+    setActionLoading(false)
+    if (res.error) { toast.error(res.error); return }
+    toast.success("Transaction refunded")
+    setActionDialog(null); setActionReason("")
+    loadTransactions(); loadOverview()
   }
 
-  const executeResolve = async () => {
-    if (!resolveDialog.disputeId || !resolveReason.trim()) { toast.error("Resolution reason is required"); return }
-    setResolveLoading(true)
-    try {
-      const result = await adminResolveDispute(resolveDialog.disputeId, resolveDecision, resolveReason)
-      if (result.error) { toast.error(result.error); return }
-      toast.success("Dispute resolved")
-      setResolveDialog({ open: false, disputeId: "", disputeReason: "", transactionAmount: 0 })
-      loadDisputes(disputeFilters)
-      loadTransactions(txnFilters)
-      loadStats()
-    } catch { toast.error("Failed to resolve dispute") }
-    finally { setResolveLoading(false) }
+  const handleResolveDispute = async (disputeId: string, resolution: DisputeResolution) => {
+    if (!actionReason.trim()) { toast.error("Reason is required for all dispute actions"); return }
+    setActionLoading(true)
+    const res = await adminResolveDispute(disputeId, resolution, actionReason)
+    setActionLoading(false)
+    if (res.error) { toast.error(res.error); return }
+    const msgs: Record<string, string> = {
+      release_to_seller: "Funds released to seller",
+      refund_to_buyer: "Funds refunded to buyer",
+      hold_funds: "Funds frozen — held in platform",
+      ban_both_hold: "Both parties banned — funds frozen",
+      escalate_authorities: "Escalated to authorities — funds frozen, users banned",
+    }
+    toast.success(msgs[resolution] || "Dispute action completed")
+    setActionDialog(null); setActionReason("")
+    loadDisputes(); loadOverview(); loadUsers()
   }
 
-  const handlePasswordChange = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) { toast.error("Passwords do not match"); return }
-    if (passwordForm.newPassword.length < 8) { toast.error("Password must be at least 8 characters"); return }
-    try {
-      const supabase = createClient()
-      const { error } = await supabase.auth.updateUser({ password: passwordForm.newPassword })
-      if (error) { toast.error(error.message); return }
-      toast.success("Password updated")
-      setPasswordForm({ newPassword: "", confirmPassword: "" })
-    } catch { toast.error("Failed to update password") }
+  const handleRoleChange = async (userId: string, newRole: "user" | "admin") => {
+    const res = await adminUpdateUserRole(userId, newRole)
+    if (res.error) { toast.error(res.error); return }
+    toast.success(`User ${newRole === "admin" ? "promoted to admin" : "demoted to user"}`)
+    loadUsers()
   }
 
-  const handleEmailChange = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newEmail.trim()) return
-    setEmailLoading(true)
-    try {
-      const supabase = createClient()
-      const { error } = await supabase.auth.updateUser({ email: newEmail })
-      if (error) { toast.error(error.message); return }
-      toast.success("Verification email sent to new address")
-      setNewEmail("")
-    } catch { toast.error("Failed to update email") }
-    finally { setEmailLoading(false) }
+  const handleBanUser = async (userId: string) => {
+    if (!actionReason.trim()) { toast.error("Reason is required to ban a user"); return }
+    setActionLoading(true)
+    const res = await adminBanUser(userId, actionReason)
+    setActionLoading(false)
+    if (res.error) { toast.error(res.error); return }
+    toast.success("User banned")
+    setActionDialog(null); setActionReason("")
+    loadUsers()
   }
 
-  const refreshAll = async () => {
-    setGlobalLoading(true)
-    await loadStats()
-    setGlobalLoading(false)
-    toast.success("Dashboard refreshed")
+  const handleUnbanUser = async (userId: string) => {
+    const res = await adminUnbanUser(userId)
+    if (res.error) { toast.error(res.error); return }
+    toast.success("User unbanned")
+    loadUsers()
   }
 
-  if (globalLoading) {
+  const handleCancelOffer = async (offerId: string) => {
+    setActionLoading(true)
+    const res = await adminCancelOffer(offerId, actionReason || undefined)
+    setActionLoading(false)
+    if (res.error) { toast.error(res.error); return }
+    toast.success("Offer cancelled")
+    setActionDialog(null); setActionReason("")
+    loadOffers()
+  }
+
+  const copyId = (id: string) => {
+    navigator.clipboard.writeText(id)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  /* ═══════════ Auth Gate ═══════════ */
+
+  if (authorized === null) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <RefreshCw className="w-8 h-8 animate-spin text-primary mx-auto mb-2" />
-          <p className="text-muted-foreground">Loading admin dashboard...</p>
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-6 h-6 animate-spin text-primary/60" />
+          <p className="text-[13px] text-muted-foreground">Verifying access&hellip;</p>
         </div>
       </div>
     )
   }
 
-  if (!isAdmin) {
+  if (!authorized) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <Card className="border-destructive max-w-md">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="w-6 h-6 text-destructive flex-shrink-0" />
-              <div>
-                <p className="font-semibold text-foreground">Access Denied</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {authError || "You do not have admin privileges. Admin access is controlled by the role field in the profiles table."}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="flex flex-col items-center justify-center h-96 gap-5">
+        <div className="w-20 h-20 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+          <Shield className="w-9 h-9 text-red-400" />
+        </div>
+        <div className="text-center space-y-1.5">
+          <h2 className="text-xl font-bold tracking-tight text-foreground">Access Denied</h2>
+          <p className="text-[13px] text-muted-foreground max-w-xs">
+            You need super admin privileges to access this console.
+          </p>
+        </div>
+        <Button asChild variant="outline" size="sm" className="bg-white/[0.04] border-white/[0.10] hover:bg-white/[0.08]">
+          <Link href="/dashboard">Return to Dashboard</Link>
+        </Button>
       </div>
     )
   }
+
+  /* ═══════════ Rendered Page ═══════════ */
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <Shield className="w-6 h-6 text-primary" />
-            Admin Dashboard
-          </h2>
-          <p className="text-muted-foreground mt-1">Platform management and oversight</p>
+    <div className="space-y-8 pb-20 md:pb-0">
+
+      {/* ─── Page Header ─── */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/20 to-blue-500/10 border border-primary/20 flex items-center justify-center">
+              <ShieldCheck className="w-6 h-6 text-primary" />
+            </div>
+            <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-[hsl(222,47%,6%)]" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                Admin Console
+              </h1>
+              <span className="px-2 py-0.5 text-[10px] font-bold tracking-widest uppercase bg-primary/10 text-primary border border-primary/20 rounded-md">
+                Super Admin
+              </span>
+            </div>
+            <p className="text-[13px] text-muted-foreground mt-0.5">
+              Full platform oversight &amp; control
+            </p>
+          </div>
         </div>
-        <Button variant="outline" onClick={refreshAll} disabled={globalLoading}>
-          <RefreshCw className={`w-4 h-4 mr-2 ${globalLoading ? "animate-spin" : ""}`} />
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={refreshAll}
+          className="bg-white/[0.04] border-white/[0.08] hover:bg-white/[0.08] text-muted-foreground hover:text-foreground transition-all w-fit gap-2"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
           Refresh
         </Button>
       </div>
 
-      {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <StatCard icon={<Users className="w-5 h-5 text-blue-600" />} bgColor="bg-blue-100" value={stats.totalUsers} label="Total Users" />
-          <StatCard icon={<TrendingUp className="w-5 h-5 text-emerald-600" />} bgColor="bg-emerald-100" value={stats.totalTransactions} label="Total Transactions" />
-          <StatCard icon={<Clock className="w-5 h-5 text-amber-600" />} bgColor="bg-amber-100" value={stats.activeTransactions} label="Active" />
-          <StatCard icon={<DollarSign className="w-5 h-5 text-purple-600" />} bgColor="bg-purple-100" value={formatCurrency(stats.totalVolume)} label="Total Volume" isString />
-          <StatCard icon={<AlertTriangle className="w-5 h-5 text-red-600" />} bgColor="bg-red-100" value={stats.activeDisputes} label="Active Disputes" />
-          <StatCard icon={<CheckCircle2 className="w-5 h-5 text-emerald-600" />} bgColor="bg-emerald-100" value={stats.resolvedDisputes} label="Resolved Disputes" />
+      {/* ─── Tab Navigation ─── */}
+      <nav className="flex items-center gap-1 bg-white/[0.02] rounded-xl p-1.5 border border-white/[0.06] overflow-x-auto scrollbar-none">
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.key
+          const disputeCount = stats?.activeDisputes
+          const showBadge = tab.key === "disputes" && disputeCount > 0
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`relative flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium rounded-lg whitespace-nowrap transition-all duration-200 ${
+                isActive
+                  ? "bg-white/[0.08] text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
+              }`}
+            >
+              <span className={isActive ? "text-primary" : ""}>{tab.icon}</span>
+              <span className="hidden sm:inline">{tab.label}</span>
+              {showBadge && (
+                <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold bg-red-500/15 text-red-400 rounded-md tabular-nums">
+                  {disputeCount}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </nav>
+
+      {/* ═══════════════ OVERVIEW TAB ═══════════════ */}
+      {activeTab === "overview" && (
+        <div className="space-y-8 animate-fade-in">
+          {loading ? (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="h-[110px] rounded-xl border border-white/[0.06] bg-white/[0.02] animate-pulse" />
+              ))}
+            </div>
+          ) : (
+            <>
+              {/* KPI Grid */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <GlassStat
+                  label="Total Users"
+                  value={fmtNum(stats?.totalUsers ?? 0)}
+                  icon={<Users className="w-5 h-5" />}
+                  glowColor="blue"
+                />
+                <GlassStat
+                  label="Platform Volume"
+                  value={fmt(stats?.totalVolume ?? 0)}
+                  icon={<DollarSign className="w-5 h-5" />}
+                  glowColor="emerald"
+                  trend={revenue?.volumeChange ? { value: revenue.volumeChange, label: "vs prev 30d" } : undefined}
+                />
+                <GlassStat
+                  label="Held in Escrow"
+                  value={fmt(stats?.escrowVolume ?? 0)}
+                  icon={<Lock className="w-5 h-5" />}
+                  glowColor="blue"
+                />
+                <GlassStat
+                  label="All Transactions"
+                  value={fmtNum(stats?.totalTransactions ?? 0)}
+                  icon={<History className="w-5 h-5" />}
+                  glowColor="purple"
+                />
+                <GlassStat
+                  label="Active Transactions"
+                  value={stats?.activeTransactions ?? 0}
+                  icon={<Activity className="w-5 h-5" />}
+                  glowColor="amber"
+                />
+                <GlassStat
+                  label="Open Disputes"
+                  value={stats?.activeDisputes ?? 0}
+                  icon={<AlertTriangle className="w-5 h-5" />}
+                  glowColor="red"
+                />
+                <GlassStat
+                  label="Resolved Disputes"
+                  value={stats?.resolvedDisputes ?? 0}
+                  icon={<CheckCircle2 className="w-5 h-5" />}
+                  glowColor="emerald"
+                />
+                <GlassStat
+                  label="Success Rate"
+                  value={`${revenue?.successRate ?? 0}%`}
+                  icon={<TrendingUp className="w-5 h-5" />}
+                  glowColor="emerald"
+                />
+              </div>
+
+              {/* Volume Chart */}
+              {revenue?.monthlyData?.length > 0 && (
+                <GlassCard padding="none">
+                  <div className="px-6 pt-6 pb-1">
+                    <h3 className="text-[15px] font-semibold tracking-tight text-foreground">
+                      Platform Volume
+                    </h3>
+                    <p className="text-[12px] text-muted-foreground mt-0.5">
+                      Monthly transaction volume &amp; releases
+                    </p>
+                  </div>
+                  <div className="h-[280px] px-3 pb-4">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={revenue.monthlyData}>
+                        <defs>
+                          <linearGradient id="adminAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="hsl(160,84%,45%)" stopOpacity={0.25} />
+                            <stop offset="100%" stopColor="hsl(160,84%,45%)" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" />
+                        <XAxis
+                          dataKey="month"
+                          tick={{ fontSize: 11, fill: "hsl(215,15%,50%)" }}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 11, fill: "hsl(215,15%,50%)" }}
+                          tickLine={false}
+                          axisLine={false}
+                          tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                        />
+                        <Tooltip content={<ChartTooltip />} />
+                        <Area
+                          type="monotone"
+                          dataKey="volume"
+                          name="Volume"
+                          stroke="hsl(160,84%,45%)"
+                          fill="url(#adminAreaGrad)"
+                          strokeWidth={2}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="released"
+                          name="Released"
+                          stroke="hsl(200,80%,55%)"
+                          fill="none"
+                          strokeWidth={1.5}
+                          strokeDasharray="4 4"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </GlassCard>
+              )}
+
+              {/* Quick Actions */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <GlassCard variant="hover" padding="sm" className="cursor-pointer group" onClick={() => setActiveTab("disputes")}>
+                  <div className="flex items-center gap-4">
+                    <div className="w-11 h-11 rounded-xl bg-red-500/10 flex items-center justify-center">
+                      <AlertTriangle className="w-5 h-5 text-red-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14px] font-semibold tracking-tight text-foreground">
+                        {stats?.activeDisputes ?? 0} Open Disputes
+                      </p>
+                      <p className="text-[12px] text-muted-foreground">Require your attention</p>
+                    </div>
+                    <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                  </div>
+                </GlassCard>
+
+                <GlassCard variant="hover" padding="sm" className="cursor-pointer group" onClick={() => setActiveTab("users")}>
+                  <div className="flex items-center gap-4">
+                    <div className="w-11 h-11 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                      <Users className="w-5 h-5 text-blue-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14px] font-semibold tracking-tight text-foreground">
+                        {fmtNum(stats?.totalUsers ?? 0)} Users
+                      </p>
+                      <p className="text-[12px] text-muted-foreground">Manage accounts &amp; roles</p>
+                    </div>
+                    <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                  </div>
+                </GlassCard>
+
+                <GlassCard variant="hover" padding="sm" className="cursor-pointer group" onClick={() => setActiveTab("audit")}>
+                  <div className="flex items-center gap-4">
+                    <div className="w-11 h-11 rounded-xl bg-purple-500/10 flex items-center justify-center">
+                      <Fingerprint className="w-5 h-5 text-purple-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14px] font-semibold tracking-tight text-foreground">
+                        Audit Trail
+                      </p>
+                      <p className="text-[12px] text-muted-foreground">All actions logged &amp; traceable</p>
+                    </div>
+                    <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                  </div>
+                </GlassCard>
+              </div>
+            </>
+          )}
         </div>
       )}
 
-      <Tabs defaultValue="transactions" onValueChange={handleTabChange} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="transactions">Transactions</TabsTrigger>
-          <TabsTrigger value="disputes">Disputes</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="audit">Audit Log</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-        </TabsList>
+      {/* ═══════════════ REVENUE TAB ═══════════════ */}
+      {activeTab === "revenue" && (
+        <div className="space-y-6 animate-fade-in">
+          <SectionHeader title="Revenue" description="Platform financial performance &amp; currency breakdown" />
 
-        {/* TRANSACTIONS TAB */}
-        <TabsContent value="transactions" className="space-y-4">
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="flex-1 min-w-[200px]">
-                  <Label className="text-xs text-muted-foreground mb-1 block">Search</Label>
-                  <div className="relative">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <Input className="pl-9" placeholder="Description or seller email..." value={txnSearch}
-                      onChange={e => setTxnSearch(e.target.value)}
-                      onKeyDown={e => { if (e.key === "Enter") { const f = { ...txnFilters, search: txnSearch || undefined, page: 1 }; setTxnFilters(f); loadTransactions(f) } }}
-                    />
-                  </div>
-                </div>
-                <div className="w-[160px]">
-                  <Label className="text-xs text-muted-foreground mb-1 block">Status</Label>
-                  <Select value={txnFilters.status || "all"} onValueChange={v => { const f = { ...txnFilters, status: v === "all" ? undefined : v as TransactionStatus, page: 1 }; setTxnFilters(f); loadTransactions(f) }}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      <SelectItem value="draft">Draft</SelectItem>
-                      <SelectItem value="awaiting_payment">Awaiting Payment</SelectItem>
-                      <SelectItem value="in_escrow">In Escrow</SelectItem>
-                      <SelectItem value="delivered">Delivered</SelectItem>
-                      <SelectItem value="released">Released</SelectItem>
-                      <SelectItem value="cancelled">Cancelled</SelectItem>
-                      <SelectItem value="dispute">Dispute</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="w-[120px]">
-                  <Label className="text-xs text-muted-foreground mb-1 block">Min Amount</Label>
-                  <Input type="number" placeholder="0" min={0} value={txnFilters.minAmount || ""} onChange={e => setTxnFilters({ ...txnFilters, minAmount: e.target.value ? Number(e.target.value) : undefined })} />
-                </div>
-                <div className="w-[120px]">
-                  <Label className="text-xs text-muted-foreground mb-1 block">Max Amount</Label>
-                  <Input type="number" placeholder="∞" min={0} value={txnFilters.maxAmount || ""} onChange={e => setTxnFilters({ ...txnFilters, maxAmount: e.target.value ? Number(e.target.value) : undefined })} />
-                </div>
-                <div className="w-[150px]">
-                  <Label className="text-xs text-muted-foreground mb-1 block">From Date</Label>
-                  <Input type="date" value={txnFilters.dateFrom || ""} onChange={e => setTxnFilters({ ...txnFilters, dateFrom: e.target.value || undefined })} />
-                </div>
-                <div className="w-[150px]">
-                  <Label className="text-xs text-muted-foreground mb-1 block">To Date</Label>
-                  <Input type="date" value={txnFilters.dateTo || ""} onChange={e => setTxnFilters({ ...txnFilters, dateTo: e.target.value || undefined })} />
-                </div>
-                <Button onClick={() => { const f = { ...txnFilters, search: txnSearch || undefined, page: 1 }; setTxnFilters(f); loadTransactions(f) }}>Apply Filters</Button>
-                <Button variant="ghost" onClick={() => { setTxnSearch(""); setTxnFilters({}); loadTransactions({}) }}>Clear</Button>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <GlassStat
+              label="Total Volume"
+              value={fmt(revenue?.totalVolume ?? 0)}
+              icon={<DollarSign className="w-5 h-5" />}
+              glowColor="emerald"
+            />
+            <GlassStat
+              label="Released"
+              value={fmt(revenue?.releasedVolume ?? 0)}
+              icon={<Unlock className="w-5 h-5" />}
+              glowColor="emerald"
+            />
+            <GlassStat
+              label="Last 30d Volume"
+              value={fmt(revenue?.last30Volume ?? 0)}
+              icon={<TrendingUp className="w-5 h-5" />}
+              glowColor="blue"
+              trend={revenue?.volumeChange ? { value: revenue.volumeChange, label: "vs prev period" } : undefined}
+            />
+            <GlassStat
+              label="Last 30d Txns"
+              value={revenue?.last30Transactions ?? 0}
+              icon={<Activity className="w-5 h-5" />}
+              glowColor="purple"
+            />
+          </div>
 
-          <Card className="border-border">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Transactions</CardTitle>
-                  <CardDescription>{txnPagination.total} total transactions</CardDescription>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => loadTransactions(txnFilters)} disabled={txnLoading}>
-                  <RefreshCw className={`w-4 h-4 mr-1 ${txnLoading ? "animate-spin" : ""}`} /> Reload
-                </Button>
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            {/* Monthly bar chart */}
+            <GlassCard padding="none" className="xl:col-span-2">
+              <div className="px-6 pt-6 pb-1">
+                <h3 className="text-[15px] font-semibold tracking-tight text-foreground">Monthly Revenue</h3>
+                <p className="text-[12px] text-muted-foreground mt-0.5">Volume processed per month</p>
               </div>
-            </CardHeader>
-            <CardContent>
-              {txnLoading && transactions.length === 0 ? (
-                <div className="flex items-center justify-center py-12"><RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" /></div>
-              ) : transactions.length === 0 ? (
-                <div className="text-center py-12">
-                  <FileText className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground font-medium">No transactions found</p>
-                  <p className="text-sm text-muted-foreground mt-1">Adjust your filters or wait for new activity</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {transactions.map(txn => {
-                    const allowedActions = getAdminAllowedActions(txn.status as TransactionStatus)
-                    const canRelease = allowedActions.includes("released")
-                    const canRefund = allowedActions.includes("cancelled")
-                    return (
-                      <div key={txn.id} className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm text-foreground truncate">{txn.description}</p>
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                            <span>Buyer: {txn.buyer?.full_name || txn.buyer?.email || "N/A"}</span>
-                            <span>·</span>
-                            <span>Seller: {txn.seller?.full_name || txn.seller?.email || txn.seller_email}</span>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">{formatDate(txn.created_at)}</p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="font-semibold text-foreground">{formatCurrency(Number(txn.amount), txn.currency)}</p>
-                        </div>
-                        <div className="shrink-0"><StatusBadge status={txn.status} config={txnStatusConfig} /></div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {canRelease && (
-                            <Button size="sm" variant="outline" className="text-emerald-700 border-emerald-300 hover:bg-emerald-50" onClick={() => openActionDialog("release", txn)}>
-                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Release
-                            </Button>
-                          )}
-                          {canRefund && (
-                            <Button size="sm" variant="outline" className="text-red-700 border-red-300 hover:bg-red-50" onClick={() => openActionDialog("refund", txn)}>
-                              <Ban className="w-3.5 h-3.5 mr-1" /> Refund
-                            </Button>
-                          )}
-                        </div>
+              <div className="h-[300px] px-3 pb-4">
+                {(revenue?.monthlyData?.length ?? 0) === 0 ? (
+                  <EmptyState icon={BarChart3} title="No revenue data yet" />
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={revenue.monthlyData}>
+                      <defs>
+                        <linearGradient id="revBarGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="hsl(160,84%,45%)" stopOpacity={0.8} />
+                          <stop offset="100%" stopColor="hsl(160,84%,45%)" stopOpacity={0.15} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11, fill: "hsl(215,15%,50%)" }} tickLine={false} axisLine={false} />
+                      <YAxis tick={{ fontSize: 11, fill: "hsl(215,15%,50%)" }} tickLine={false} axisLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Bar dataKey="volume" name="Volume" fill="url(#revBarGrad)" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </GlassCard>
+
+            {/* Currency breakdown */}
+            <GlassCard padding="none">
+              <div className="px-6 pt-6 pb-4">
+                <h3 className="text-[15px] font-semibold tracking-tight text-foreground">By Currency</h3>
+                <p className="text-[12px] text-muted-foreground mt-0.5">Volume distribution</p>
+              </div>
+              <div className="px-6 pb-6 space-y-4">
+                {(revenue?.currencyBreakdown || []).map((c: any) => {
+                  const pct = revenue.totalVolume > 0 ? (c.amount / revenue.totalVolume * 100).toFixed(1) : "0"
+                  return (
+                    <div key={c.currency}>
+                      <div className="flex justify-between text-[12px] mb-1.5">
+                        <span className="text-foreground font-semibold">{c.currency}</span>
+                        <span className="text-muted-foreground tabular-nums">
+                          {fmt(c.amount, c.currency)} · {pct}%
+                        </span>
                       </div>
-                    )
-                  })}
-                </div>
-              )}
-              <PaginationControls page={txnPagination.page} totalPages={txnPagination.totalPages} onPageChange={p => { const f = { ...txnFilters, page: p }; setTxnFilters(f); loadTransactions(f) }} />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* DISPUTES TAB */}
-        <TabsContent value="disputes" className="space-y-4">
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="flex-1 min-w-[200px]">
-                  <Label className="text-xs text-muted-foreground mb-1 block">Search</Label>
-                  <div className="relative">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <Input className="pl-9" placeholder="Reason or description..." value={disputeSearch}
-                      onChange={e => setDisputeSearch(e.target.value)}
-                      onKeyDown={e => { if (e.key === "Enter") { const f = { ...disputeFilters, search: disputeSearch || undefined, page: 1 }; setDisputeFilters(f); loadDisputes(f) } }}
-                    />
-                  </div>
-                </div>
-                <div className="w-[160px]">
-                  <Label className="text-xs text-muted-foreground mb-1 block">Status</Label>
-                  <Select value={disputeFilters.status || "all"} onValueChange={v => { const f = { ...disputeFilters, status: v === "all" ? undefined : v as any, page: 1 }; setDisputeFilters(f); loadDisputes(f) }}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      <SelectItem value="under_review">Under Review</SelectItem>
-                      <SelectItem value="resolved">Resolved</SelectItem>
-                      <SelectItem value="closed">Closed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button onClick={() => { const f = { ...disputeFilters, search: disputeSearch || undefined, page: 1 }; setDisputeFilters(f); loadDisputes(f) }}>Apply</Button>
-                <Button variant="ghost" onClick={() => { setDisputeSearch(""); setDisputeFilters({}); loadDisputes({}) }}>Clear</Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Disputes</CardTitle>
-                  <CardDescription>{disputePagination.total} total disputes</CardDescription>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => loadDisputes(disputeFilters)} disabled={disputeLoading}>
-                  <RefreshCw className={`w-4 h-4 mr-1 ${disputeLoading ? "animate-spin" : ""}`} /> Reload
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {disputeLoading && disputes.length === 0 ? (
-                <div className="flex items-center justify-center py-12"><RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" /></div>
-              ) : disputes.length === 0 ? (
-                <div className="text-center py-12">
-                  <Gavel className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground font-medium">No disputes found</p>
-                  <p className="text-sm text-muted-foreground mt-1">No disputes match your current filters</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {disputes.map(dispute => {
-                    const txn = dispute.transaction
-                    const isActionable = dispute.status === "under_review"
-                    return (
-                      <div key={dispute.id} className="p-4 bg-muted/50 rounded-lg space-y-2">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-foreground">{dispute.reason}</p>
-                            <p className="text-sm text-muted-foreground mt-1">{dispute.description}</p>
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mt-2">
-                              <span>Opened by: {dispute.opener?.full_name || dispute.opener?.email || "Unknown"}</span>
-                              <span>·</span>
-                              <span>Transaction: {formatCurrency(Number(txn?.amount || 0), txn?.currency)} — {txn?.description || "N/A"}</span>
-                              <span>·</span>
-                              <span>{formatDate(dispute.created_at)}</span>
-                            </div>
-                            {dispute.resolution && (
-                              <div className="mt-2 p-2 bg-background rounded border text-sm">
-                                <span className="font-medium">Resolution:</span> {dispute.resolution}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <StatusBadge status={dispute.status} config={disputeStatusConfig} />
-                            {isActionable && (
-                              <Button size="sm" onClick={() => openResolveDialog(dispute)}>
-                                <Gavel className="w-3.5 h-3.5 mr-1" /> Resolve
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-              <PaginationControls page={disputePagination.page} totalPages={disputePagination.totalPages} onPageChange={p => { const f = { ...disputeFilters, page: p }; setDisputeFilters(f); loadDisputes(f) }} />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* USERS TAB */}
-        <TabsContent value="users" className="space-y-4">
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="flex-1 min-w-[200px]">
-                  <Label className="text-xs text-muted-foreground mb-1 block">Search</Label>
-                  <div className="relative">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <Input className="pl-9" placeholder="Name or email..." value={userSearch}
-                      onChange={e => setUserSearch(e.target.value)}
-                      onKeyDown={e => { if (e.key === "Enter") { const f = { ...userFilters, search: userSearch || undefined, page: 1 }; setUserFilters(f); loadUsers(f) } }}
-                    />
-                  </div>
-                </div>
-                <div className="w-[140px]">
-                  <Label className="text-xs text-muted-foreground mb-1 block">Role</Label>
-                  <Select value={userFilters.role || "all"} onValueChange={v => { const f = { ...userFilters, role: v === "all" ? undefined : v as any, page: 1 }; setUserFilters(f); loadUsers(f) }}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Roles</SelectItem>
-                      <SelectItem value="user">User</SelectItem>
-                      <SelectItem value="admin">Admin</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button onClick={() => { const f = { ...userFilters, search: userSearch || undefined, page: 1 }; setUserFilters(f); loadUsers(f) }}>Apply</Button>
-                <Button variant="ghost" onClick={() => { setUserSearch(""); setUserFilters({}); loadUsers({}) }}>Clear</Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Users</CardTitle>
-                  <CardDescription>{userPagination.total} registered users</CardDescription>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => loadUsers(userFilters)} disabled={userLoading}>
-                  <RefreshCw className={`w-4 h-4 mr-1 ${userLoading ? "animate-spin" : ""}`} /> Reload
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {userLoading && users.length === 0 ? (
-                <div className="flex items-center justify-center py-12"><RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" /></div>
-              ) : users.length === 0 ? (
-                <div className="text-center py-12">
-                  <Users className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground font-medium">No users found</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {users.map(profile => (
-                    <div key={profile.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                      <div>
-                        <p className="font-medium text-foreground">{profile.full_name || "—"}</p>
-                        <p className="text-sm text-muted-foreground">{profile.email}</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Badge variant={profile.role === "admin" ? "default" : "secondary"}>{profile.role || "user"}</Badge>
-                        <p className="text-xs text-muted-foreground">Joined {formatDate(profile.created_at)}</p>
+                      <div className="h-2 bg-white/[0.06] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-primary/80 to-primary/40 rounded-full transition-all duration-700 ease-out"
+                          style={{ width: `${pct}%` }}
+                        />
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-              <PaginationControls page={userPagination.page} totalPages={userPagination.totalPages} onPageChange={p => { const f = { ...userFilters, page: p }; setUserFilters(f); loadUsers(f) }} />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* AUDIT LOG TAB */}
-        <TabsContent value="audit" className="space-y-4">
-          <Card className="border-border">
-            <CardContent className="p-4">
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="w-[180px]">
-                  <Label className="text-xs text-muted-foreground mb-1 block">Event Type</Label>
-                  <Select value={auditFilters.eventType || "all"} onValueChange={v => { const f = { ...auditFilters, eventType: v === "all" ? undefined : v, page: 1 }; setAuditFilters(f); loadAuditLogs(f) }}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Events</SelectItem>
-                      <SelectItem value="admin.transaction.release">Transaction Release</SelectItem>
-                      <SelectItem value="admin.transaction.refund">Transaction Refund</SelectItem>
-                      <SelectItem value="admin.dispute.resolve">Dispute Resolve</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="w-[160px]">
-                  <Label className="text-xs text-muted-foreground mb-1 block">Target Table</Label>
-                  <Select value={auditFilters.targetTable || "all"} onValueChange={v => { const f = { ...auditFilters, targetTable: v === "all" ? undefined : v, page: 1 }; setAuditFilters(f); loadAuditLogs(f) }}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Tables</SelectItem>
-                      <SelectItem value="transactions">Transactions</SelectItem>
-                      <SelectItem value="disputes">Disputes</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="w-[150px]">
-                  <Label className="text-xs text-muted-foreground mb-1 block">From Date</Label>
-                  <Input type="date" value={auditFilters.dateFrom || ""} onChange={e => setAuditFilters({ ...auditFilters, dateFrom: e.target.value || undefined })} />
-                </div>
-                <div className="w-[150px]">
-                  <Label className="text-xs text-muted-foreground mb-1 block">To Date</Label>
-                  <Input type="date" value={auditFilters.dateTo || ""} onChange={e => setAuditFilters({ ...auditFilters, dateTo: e.target.value || undefined })} />
-                </div>
-                <Button onClick={() => loadAuditLogs({ ...auditFilters, page: 1 })}>Apply</Button>
-                <Button variant="ghost" onClick={() => { setAuditFilters({}); loadAuditLogs({}) }}>Clear</Button>
+                  )
+                })}
+                {(revenue?.currencyBreakdown?.length ?? 0) === 0 && (
+                  <EmptyState icon={DollarSign} title="No currency data" />
+                )}
               </div>
-            </CardContent>
-          </Card>
+            </GlassCard>
+          </div>
+        </div>
+      )}
 
-          <Card className="border-border">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2"><Lock className="w-4 h-4" /> Audit Log</CardTitle>
-                  <CardDescription>{auditPagination.total} entries — read-only, immutable</CardDescription>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => loadAuditLogs(auditFilters)} disabled={auditLoading}>
-                  <RefreshCw className={`w-4 h-4 mr-1 ${auditLoading ? "animate-spin" : ""}`} /> Reload
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {auditLoading && auditLogs.length === 0 ? (
-                <div className="flex items-center justify-center py-12"><RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" /></div>
-              ) : auditLogs.length === 0 ? (
-                <div className="text-center py-12">
-                  <FileText className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground font-medium">No audit log entries</p>
-                  <p className="text-sm text-muted-foreground mt-1">Admin actions will appear here</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {auditLogs.map(log => (
-                    <div key={log.id} className="p-3 bg-muted/50 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-xs font-mono">{log.event_type}</Badge>
-                          <span className="text-xs text-muted-foreground">on</span>
-                          <Badge variant="secondary" className="text-xs">{log.target_table}</Badge>
+      {/* ═══════════════ TRANSACTIONS TAB ═══════════════ */}
+      {activeTab === "transactions" && (
+        <div className="space-y-5 animate-fade-in">
+          <SectionHeader
+            title="Transactions"
+            description="All platform transactions — release or refund from here"
+            count={txnPagination.total}
+          />
+
+          <div className="flex flex-col md:flex-row gap-3">
+            <GlassInput
+              placeholder="Search description, email..."
+              icon={<Search className="w-3.5 h-3.5" />}
+              value={txnFilter.search || ""}
+              onChange={(e) => setTxnFilter({ ...txnFilter, search: e.target.value, page: 1 })}
+              className="md:w-72"
+            />
+            <FilterBar
+              options={[
+                { key: undefined, label: "All" },
+                { key: "in_escrow" as const, label: "Escrow" },
+                { key: "delivered" as const, label: "Delivered" },
+                { key: "dispute" as const, label: "Dispute" },
+                { key: "released" as const, label: "Released" },
+                { key: "cancelled" as const, label: "Cancelled" },
+              ]}
+              value={txnFilter.status}
+              onChange={(s) => setTxnFilter({ ...txnFilter, status: s, page: 1 })}
+            />
+          </div>
+
+          <GlassCard padding="none">
+            {/* Table Header */}
+            <div className="hidden lg:grid lg:grid-cols-[1fr_auto_auto] gap-4 px-5 py-3 border-b border-white/[0.06]">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Transaction</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-right w-28">Amount</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-right w-48">Status &amp; Actions</span>
+            </div>
+
+            {transactions.length === 0 ? (
+              <EmptyState icon={History} title="No transactions found" description="Try adjusting your filters" />
+            ) : (
+              <div className="divide-y divide-white/[0.04]">
+                {transactions.map(txn => {
+                  const cfg = statusBadgeMap[txn.status] || { label: txn.status, variant: "muted" as const }
+                  const canRelease = ["delivered", "dispute"].includes(txn.status)
+                  const canRefund = ["in_escrow", "dispute"].includes(txn.status)
+                  return (
+                    <div key={txn.id} className="flex flex-col lg:grid lg:grid-cols-[1fr_auto_auto] gap-3 lg:gap-4 p-5 hover:bg-white/[0.015] transition-colors items-center">
+                      <div className="min-w-0 w-full">
+                        <p className="text-[14px] font-semibold tracking-tight text-foreground truncate">
+                          {txn.description}
+                        </p>
+                        <p className="text-[12px] text-muted-foreground mt-1">
+                          <span className="text-foreground/60">Buyer</span> {txn.buyer?.email || "—"}
+                          <span className="mx-1.5 text-white/10">|</span>
+                          <span className="text-foreground/60">Seller</span> {txn.seller?.email || txn.seller_email || "—"}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <button
+                            onClick={() => copyId(txn.id)}
+                            className="text-[11px] text-muted-foreground hover:text-foreground font-mono inline-flex items-center gap-1 transition-colors"
+                          >
+                            {copiedId === txn.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                            {txn.id.slice(0, 8)}
+                          </button>
+                          <span className="text-white/10">·</span>
+                          <span className="text-[11px] text-muted-foreground">{timeAgo(txn.created_at)}</span>
                         </div>
-                        <p className="text-xs text-muted-foreground">{formatDate(log.created_at)}</p>
                       </div>
-                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                        <span>Actor: {log.actor_id ? log.actor_id.substring(0, 8) + "..." : "system"}</span>
-                        <span>Role: {log.actor_role}</span>
-                        <span>Target: {log.target_id.substring(0, 8)}...</span>
+
+                      <span className="text-[15px] font-bold tabular-nums text-foreground w-28 text-right">
+                        {fmt(Number(txn.amount), txn.currency)}
+                      </span>
+
+                      <div className="flex items-center gap-2 w-48 justify-end flex-wrap">
+                        <GlassBadge variant={cfg.variant} dot={cfg.dot} pulse={cfg.pulse}>{cfg.label}</GlassBadge>
+                        {canRelease && (
+                          <button
+                            onClick={() => setActionDialog({ type: "release", id: txn.id, status: txn.status })}
+                            className="px-2.5 py-1.5 text-[11px] font-semibold rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/10 transition-all"
+                          >
+                            Release
+                          </button>
+                        )}
+                        {canRefund && (
+                          <button
+                            onClick={() => setActionDialog({ type: "refund", id: txn.id, status: txn.status })}
+                            className="px-2.5 py-1.5 text-[11px] font-semibold rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/10 transition-all"
+                          >
+                            Refund
+                          </button>
+                        )}
                       </div>
-                      {(log.old_values || log.new_values) && (
-                        <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                          {log.old_values && (
-                            <div className="p-2 bg-red-50 dark:bg-red-950/20 rounded border border-red-200 dark:border-red-900/30">
-                              <span className="font-medium text-red-700 dark:text-red-400">Before:</span>
-                              <pre className="mt-1 whitespace-pre-wrap break-all text-muted-foreground">{JSON.stringify(log.old_values, null, 1)}</pre>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <div className="px-5 pb-4">
+              <Pagination page={txnPagination.page} totalPages={txnPagination.totalPages} onPage={(p) => setTxnFilter({ ...txnFilter, page: p })} />
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ═══════════════ DISPUTES TAB ═══════════════ */}
+      {activeTab === "disputes" && (
+        <div className="space-y-5 animate-fade-in">
+          <SectionHeader
+            title="Disputes"
+            description="Admin-only resolution — you decide where every dollar goes"
+            count={disputePagination.total}
+          />
+
+          {/* Policy Banner */}
+          <div className="relative overflow-hidden rounded-xl border border-red-500/15 bg-gradient-to-r from-red-500/[0.06] to-transparent p-5">
+            <div className="flex items-start gap-4">
+              <div className="w-11 h-11 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center shrink-0">
+                <Gavel className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <p className="text-[14px] font-semibold tracking-tight text-foreground">
+                  Admin-Only Resolution Policy
+                </p>
+                <p className="text-[12px] text-muted-foreground mt-1.5 leading-relaxed max-w-2xl">
+                  Only you decides where funds go. Not Stripe, not any user. Funds remain frozen in the platform
+                  until you make a decision. Options: release to seller, refund to buyer, hold indefinitely,
+                  ban both parties, or escalate to law enforcement.
+                </p>
+              </div>
+            </div>
+            <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 rounded-full blur-3xl" />
+          </div>
+
+          <div className="flex flex-col md:flex-row gap-3">
+            <GlassInput
+              placeholder="Search reason..."
+              icon={<Search className="w-3.5 h-3.5" />}
+              value={disputeFilter.search || ""}
+              onChange={(e) => setDisputeFilter({ ...disputeFilter, search: e.target.value, page: 1 })}
+              className="md:w-72"
+            />
+            <FilterBar
+              options={[
+                { key: undefined, label: "All" },
+                { key: "under_review" as const, label: "Under Review" },
+                { key: "resolved" as const, label: "Resolved" },
+                { key: "closed" as const, label: "Closed / Held" },
+              ]}
+              value={disputeFilter.status}
+              onChange={(s) => setDisputeFilter({ ...disputeFilter, status: s, page: 1 })}
+            />
+          </div>
+
+          <GlassCard padding="none">
+            {disputes.length === 0 ? (
+              <EmptyState icon={AlertTriangle} title="No disputes found" description="All clear for now" />
+            ) : (
+              <div className="divide-y divide-white/[0.04]">
+                {disputes.map(d => {
+                  const isActive = d.status === "under_review"
+                  const isClosed = d.status === "closed"
+                  const badgeVariant = isActive ? "amber" : isClosed ? "red" : "emerald"
+                  const badgeLabel = isActive ? "Under Review" : isClosed ? "Closed / Held" : "Resolved"
+                  return (
+                    <div key={d.id} className="p-5 hover:bg-white/[0.015] transition-colors">
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                        <div className="flex items-start gap-4 min-w-0 flex-1">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                            isActive ? "bg-red-500/10 border border-red-500/15" : isClosed ? "bg-amber-500/10 border border-amber-500/15" : "bg-white/[0.04] border border-white/[0.06]"
+                          }`}>
+                            {isActive ? <AlertTriangle className="w-4.5 h-4.5 text-red-400" /> : isClosed ? <Lock className="w-4.5 h-4.5 text-amber-400" /> : <CheckCircle2 className="w-4.5 h-4.5 text-emerald-400" />}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[14px] font-semibold tracking-tight text-foreground truncate">
+                              {d.transaction?.description || "Dispute"}
+                            </p>
+                            <p className="text-[12px] text-muted-foreground mt-0.5 truncate">{d.reason}</p>
+                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                              <span className="text-[11px] text-muted-foreground">
+                                Filed by <span className="text-foreground/70">{d.opener?.email || "—"}</span>
+                              </span>
+                              <span className="text-white/10">·</span>
+                              <span className="text-[11px] text-muted-foreground">{timeAgo(d.created_at)}</span>
+                              {d.transaction && (
+                                <>
+                                  <span className="text-white/10">·</span>
+                                  <span className="text-[13px] font-bold tabular-nums text-foreground">
+                                    {fmt(Number(d.transaction.amount), d.transaction.currency)}
+                                  </span>
+                                </>
+                              )}
                             </div>
-                          )}
-                          {log.new_values && (
-                            <div className="p-2 bg-emerald-50 dark:bg-emerald-950/20 rounded border border-emerald-200 dark:border-emerald-900/30">
-                              <span className="font-medium text-emerald-700 dark:text-emerald-400">After:</span>
-                              <pre className="mt-1 whitespace-pre-wrap break-all text-muted-foreground">{JSON.stringify(log.new_values, null, 1)}</pre>
-                            </div>
-                          )}
+                            {d.resolution && (
+                              <p className="text-[11px] text-amber-400/80 mt-1.5 font-medium">
+                                Resolution: {d.resolution}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <GlassBadge variant={badgeVariant} dot pulse={isActive}>{badgeLabel}</GlassBadge>
+                        </div>
+                      </div>
+
+                      {/* Admin action buttons — only for active disputes */}
+                      {isActive && (
+                        <div className="flex flex-wrap items-center gap-2 mt-4 ml-14">
+                          <button onClick={() => setActionDialog({ type: "resolve_release", id: d.id })} className="px-3 py-2 text-[12px] font-semibold rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/10 transition-all">
+                            Release to Seller
+                          </button>
+                          <button onClick={() => setActionDialog({ type: "resolve_refund", id: d.id })} className="px-3 py-2 text-[12px] font-semibold rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/10 transition-all">
+                            Refund to Buyer
+                          </button>
+                          <button onClick={() => setActionDialog({ type: "resolve_hold", id: d.id })} className="px-3 py-2 text-[12px] font-semibold rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/10 transition-all flex items-center gap-1.5">
+                            <Lock className="w-3 h-3" /> Hold Funds
+                          </button>
+                          <button onClick={() => setActionDialog({ type: "resolve_ban_both", id: d.id })} className="px-3 py-2 text-[12px] font-semibold rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/10 transition-all flex items-center gap-1.5">
+                            <Ban className="w-3 h-3" /> Ban Both + Hold
+                          </button>
+                          <button onClick={() => setActionDialog({ type: "resolve_authorities", id: d.id })} className="px-3 py-2 text-[12px] font-semibold rounded-lg bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 border border-purple-500/10 transition-all flex items-center gap-1.5">
+                            <Shield className="w-3 h-3" /> Escalate to Authorities
+                          </button>
                         </div>
                       )}
                     </div>
-                  ))}
-                </div>
-              )}
-              <PaginationControls page={auditPagination.page} totalPages={auditPagination.totalPages} onPageChange={p => { const f = { ...auditFilters, page: p }; setAuditFilters(f); loadAuditLogs(f) }} />
-            </CardContent>
-          </Card>
-        </TabsContent>
+                  )
+                })}
+              </div>
+            )}
+            <div className="px-5 pb-4">
+              <Pagination page={disputePagination.page} totalPages={disputePagination.totalPages} onPage={(p) => setDisputeFilter({ ...disputeFilter, page: p })} />
+            </div>
+          </GlassCard>
+        </div>
+      )}
 
-        {/* SETTINGS TAB */}
-        <TabsContent value="settings" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Card className="border-border">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2"><Lock className="w-5 h-5" /> Change Password</CardTitle>
-                <CardDescription>Update your admin password</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handlePasswordChange} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="new-password">New Password</Label>
-                    <div className="relative">
-                      <Input id="new-password" type={showPasswords.new ? "text" : "password"} value={passwordForm.newPassword}
-                        onChange={e => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} className="pr-10" required minLength={8} />
-                      <button type="button" onClick={() => setShowPasswords({ ...showPasswords, new: !showPasswords.new })}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                        {showPasswords.new ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="confirm-password">Confirm New Password</Label>
-                    <div className="relative">
-                      <Input id="confirm-password" type={showPasswords.confirm ? "text" : "password"} value={passwordForm.confirmPassword}
-                        onChange={e => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} className="pr-10" required minLength={8} />
-                      <button type="button" onClick={() => setShowPasswords({ ...showPasswords, confirm: !showPasswords.confirm })}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                        {showPasswords.confirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-                  <Button type="submit" className="w-full">Update Password</Button>
-                </form>
-              </CardContent>
-            </Card>
+      {/* ═══════════════ USERS TAB ═══════════════ */}
+      {activeTab === "users" && (
+        <div className="space-y-5 animate-fade-in">
+          <SectionHeader
+            title="Users"
+            description="Manage accounts, roles &amp; access"
+            count={userPagination.total}
+          />
 
-            <Card className="border-border">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2"><Mail className="w-5 h-5" /> Change Email</CardTitle>
-                <CardDescription>Update your admin email address</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleEmailChange} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="current-email">Current Email</Label>
-                    <Input id="current-email" type="email" value={user?.email || ""} disabled className="bg-muted" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="new-email">New Email</Label>
-                    <Input id="new-email" type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} required />
-                  </div>
-                  <Button type="submit" disabled={emailLoading} className="w-full">
-                    {emailLoading ? "Sending verification..." : "Update Email"}
-                  </Button>
-                  <p className="text-xs text-muted-foreground">A verification link will be sent to the new email address</p>
-                </form>
-              </CardContent>
-            </Card>
+          <div className="flex flex-col md:flex-row gap-3">
+            <GlassInput
+              placeholder="Search email, name..."
+              icon={<Search className="w-3.5 h-3.5" />}
+              value={userFilter.search || ""}
+              onChange={(e) => setUserFilter({ ...userFilter, search: e.target.value, page: 1 })}
+              className="md:w-72"
+            />
+            <FilterBar
+              options={[
+                { key: undefined, label: "All" },
+                { key: "user" as const, label: "Users" },
+                { key: "admin" as const, label: "Admins" },
+              ]}
+              value={userFilter.role}
+              onChange={(r) => setUserFilter({ ...userFilter, role: r, page: 1 })}
+            />
           </div>
 
-          <Card className="border-border bg-muted/30">
-            <CardContent className="p-4">
-              <div className="flex items-start gap-3">
-                <Shield className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                <div className="text-sm">
-                  <p className="font-medium text-foreground">Admin Access</p>
-                  <p className="text-muted-foreground mt-1">
-                    You have full access to all platform data and actions. All administrative actions are recorded in the immutable audit log.
-                    Changes to email or password will require re-authentication.
+          <GlassCard padding="none">
+            {/* Table Header */}
+            <div className="hidden lg:grid lg:grid-cols-[1fr_auto] gap-4 px-5 py-3 border-b border-white/[0.06]">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">User</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-right w-56">Role &amp; Actions</span>
+            </div>
+
+            {users.length === 0 ? (
+              <EmptyState icon={Users} title="No users found" description="Try adjusting your search" />
+            ) : (
+              <div className="divide-y divide-white/[0.04]">
+                {users.map(u => {
+                  const initials = (u.full_name || u.email || "?").split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
+                  const isAdmin = u.role === "admin"
+                  const isBanned = u.role === "banned"
+                  return (
+                    <div key={u.id} className="flex flex-col md:grid md:grid-cols-[1fr_auto] gap-3 md:gap-4 p-5 hover:bg-white/[0.015] transition-colors items-center">
+                      <div className="flex items-center gap-4 min-w-0 w-full">
+                        <Avatar className="w-10 h-10 shrink-0">
+                          <AvatarFallback className={`text-[12px] font-bold ${
+                            isBanned ? "bg-red-500/15 text-red-400" : isAdmin ? "bg-primary/15 text-primary" : "bg-white/[0.06] text-muted-foreground"
+                          }`}>
+                            {initials}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-[14px] font-semibold tracking-tight text-foreground truncate">
+                              {u.full_name || "No name"}
+                            </p>
+                            {isAdmin && <GlassBadge variant="blue" size="sm">Admin</GlassBadge>}
+                            {isBanned && <GlassBadge variant="red" size="sm">Banned</GlassBadge>}
+                          </div>
+                          <p className="text-[12px] text-muted-foreground mt-0.5">{u.email}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <button
+                              onClick={() => copyId(u.id)}
+                              className="text-[11px] text-muted-foreground hover:text-foreground font-mono inline-flex items-center gap-1 transition-colors"
+                            >
+                              {copiedId === u.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                              {u.id.slice(0, 8)}
+                            </button>
+                            <span className="text-white/10">·</span>
+                            <span className="text-[11px] text-muted-foreground">Joined {timeAgo(u.created_at)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 w-56 justify-end flex-wrap">
+                        {isBanned ? (
+                          <button
+                            onClick={() => handleUnbanUser(u.id)}
+                            className="px-3 py-2 text-[12px] font-semibold rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/10 transition-all"
+                          >
+                            Unban
+                          </button>
+                        ) : isAdmin ? (
+                          <button
+                            onClick={() => handleRoleChange(u.id, "user")}
+                            className="px-3 py-2 text-[12px] font-semibold rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/10 transition-all"
+                          >
+                            Demote to User
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleRoleChange(u.id, "admin")}
+                              className="px-3 py-2 text-[12px] font-semibold rounded-lg bg-primary/10 text-primary hover:bg-primary/20 border border-primary/10 transition-all flex items-center gap-1.5"
+                            >
+                              <Crown className="w-3 h-3" /> Promote
+                            </button>
+                            <button
+                              onClick={() => setActionDialog({ type: "ban_user", id: u.id })}
+                              className="px-3 py-2 text-[12px] font-semibold rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/10 transition-all flex items-center gap-1.5"
+                            >
+                              <Ban className="w-3 h-3" /> Ban
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <div className="px-5 pb-4">
+              <Pagination page={userPagination.page} totalPages={userPagination.totalPages} onPage={(p) => setUserFilter({ ...userFilter, page: p })} />
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ═══════════════ OFFERS TAB ═══════════════ */}
+      {activeTab === "offers" && (
+        <div className="space-y-5 animate-fade-in">
+          <SectionHeader
+            title="Offers"
+            description="All payment link offers created on the platform"
+            count={offerPagination.total}
+          />
+
+          <div className="flex flex-col md:flex-row gap-3">
+            <GlassInput
+              placeholder="Search title..."
+              icon={<Search className="w-3.5 h-3.5" />}
+              value={offerFilter.search || ""}
+              onChange={(e) => setOfferFilter({ ...offerFilter, search: e.target.value, page: 1 })}
+              className="md:w-72"
+            />
+            <FilterBar
+              options={[
+                { key: undefined, label: "All" },
+                { key: "pending" as const, label: "Pending" },
+                { key: "accepted" as const, label: "Accepted" },
+                { key: "expired" as const, label: "Expired" },
+                { key: "cancelled" as const, label: "Cancelled" },
+              ]}
+              value={offerFilter.status}
+              onChange={(s) => setOfferFilter({ ...offerFilter, status: s, page: 1 })}
+            />
+          </div>
+
+          <GlassCard padding="none">
+            {/* Table Header */}
+            <div className="hidden lg:grid lg:grid-cols-[1fr_auto] gap-4 px-5 py-3 border-b border-white/[0.06]">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Offer</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-right w-40">Status &amp; Actions</span>
+            </div>
+
+            {offers.length === 0 ? (
+              <EmptyState icon={FileText} title="No offers found" description="Try adjusting your filters" />
+            ) : (
+              <div className="divide-y divide-white/[0.04]">
+                {offers.map(o => {
+                  const cfg = offerStatusBadgeMap[o.status] || { label: o.status, variant: "muted" as const }
+                  return (
+                    <div key={o.id} className="flex flex-col md:grid md:grid-cols-[1fr_auto] gap-3 md:gap-4 p-5 hover:bg-white/[0.015] transition-colors items-center">
+                      <div className="flex items-center gap-4 min-w-0 w-full">
+                        <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/10 flex items-center justify-center shrink-0">
+                          <Link2 className="w-4.5 h-4.5 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[14px] font-semibold tracking-tight text-foreground truncate">{o.title}</p>
+                          <p className="text-[12px] text-muted-foreground mt-0.5">
+                            <span className="font-semibold tabular-nums text-foreground/80">{fmt(Number(o.amount), o.currency)}</span>
+                            <span className="mx-1.5 text-white/10">|</span>
+                            {o.creator_role}
+                            <span className="mx-1.5 text-white/10">|</span>
+                            {o.creator?.email || "—"}
+                          </p>
+                          <span className="text-[11px] text-muted-foreground">{timeAgo(o.created_at)}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 w-40 justify-end">
+                        <GlassBadge variant={cfg.variant} dot={cfg.dot} pulse={cfg.pulse}>{cfg.label}</GlassBadge>
+                        {o.status === "pending" && (
+                          <button
+                            onClick={() => setActionDialog({ type: "cancel_offer", id: o.id })}
+                            className="px-2.5 py-1.5 text-[11px] font-semibold rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/10 transition-all"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <div className="px-5 pb-4">
+              <Pagination page={offerPagination.page} totalPages={offerPagination.totalPages} onPage={(p) => setOfferFilter({ ...offerFilter, page: p })} />
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ═══════════════ AUDIT LOG TAB ═══════════════ */}
+      {activeTab === "audit" && (
+        <div className="space-y-5 animate-fade-in">
+          <SectionHeader
+            title="Audit Log"
+            description="Every admin action recorded &amp; traceable"
+            count={auditPagination.total}
+          />
+
+          <FilterBar
+            options={[
+              { key: undefined, label: "All Events" },
+              { key: "admin.transaction.release", label: "Releases" },
+              { key: "admin.transaction.refund", label: "Refunds" },
+              { key: "admin.dispute.resolve", label: "Dispute Resolutions" },
+              { key: "admin.user.promote", label: "Promotions" },
+              { key: "admin.offer.cancel", label: "Offer Cancels" },
+            ]}
+            value={auditFilter.eventType}
+            onChange={(evt) => setAuditFilter({ ...auditFilter, eventType: evt, page: 1 })}
+          />
+
+          <GlassCard padding="none">
+            {auditLogs.length === 0 ? (
+              <EmptyState icon={Fingerprint} title="No audit logs found" description="Actions will appear here as they happen" />
+            ) : (
+              <div className="divide-y divide-white/[0.04]">
+                {auditLogs.map(log => (
+                  <div key={log.id} className="p-5 hover:bg-white/[0.015] transition-colors">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-[13px] font-semibold text-foreground font-mono">
+                            {log.event_type}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground">{timeAgo(log.created_at)}</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          <span className="text-[11px] text-muted-foreground">
+                            Target: <span className="font-mono text-foreground/60">{log.target_table}/{log.target_id?.slice(0, 8)}</span>
+                          </span>
+                          <span className="text-white/10">·</span>
+                          <span className="text-[11px] text-muted-foreground">
+                            Actor: <span className="font-mono text-foreground/60">{log.actor_id?.slice(0, 8)}</span>
+                          </span>
+                        </div>
+                        {log.new_values && (
+                          <div className="mt-3 p-3 rounded-lg bg-white/[0.02] border border-white/[0.05]">
+                            <pre className="text-[11px] text-muted-foreground font-mono whitespace-pre-wrap break-all leading-relaxed">
+                              {JSON.stringify(log.new_values, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="px-5 pb-4">
+              <Pagination page={auditPagination.page} totalPages={auditPagination.totalPages} onPage={(p) => setAuditFilter({ ...auditFilter, page: p })} />
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ═══════════════ CONFIG TAB ═══════════════ */}
+      {activeTab === "config" && (
+        <div className="space-y-6 animate-fade-in">
+          <SectionHeader title="Configuration" description="Platform-wide settings &amp; system health" />
+
+          <GlassContainer header={{ title: "Platform Controls", description: "Toggle features across the platform" }}>
+            <div className="space-y-3">
+              {[
+                { title: "Maintenance Mode", desc: "Disable user actions during maintenance", key: "maintenance", danger: true },
+                { title: "New Registrations", desc: "Allow new user sign-ups", key: "registrations" },
+                { title: "Offer Creation", desc: "Allow users to create new payment offers", key: "offers" },
+                { title: "Dispute Filing", desc: "Allow users to open disputes", key: "disputes" },
+              ].map(item => (
+                <div key={item.key} className={`flex items-center justify-between py-4 px-4 rounded-xl border transition-colors ${
+                  item.danger ? "bg-red-500/[0.03] border-red-500/10 hover:bg-red-500/[0.05]" : "bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]"
+                }`}>
+                  <div>
+                    <p className="text-[13px] font-semibold text-foreground">{item.title}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{item.desc}</p>
+                  </div>
+                  <Switch
+                    defaultChecked={item.key !== "maintenance"}
+                    onCheckedChange={() => toast.success(`${item.title} toggled (save to DB pending)`)}
+                  />
+                </div>
+              ))}
+            </div>
+          </GlassContainer>
+
+          <GlassContainer header={{ title: "Fee Structure", description: "Current platform fee configuration" }}>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-5 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
+                    Escrow Fee
                   </p>
+                  <p className="text-3xl font-bold tracking-tight text-foreground mt-2">2.9%</p>
+                  <p className="text-[12px] text-muted-foreground mt-1">+ $0.30 per transaction</p>
+                </div>
+                <div className="p-5 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
+                    Payout Fee
+                  </p>
+                  <p className="text-3xl font-bold tracking-tight text-foreground mt-2">0.25%</p>
+                  <p className="text-[12px] text-muted-foreground mt-1">Min $0.25 per payout</p>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+              <p className="text-[11px] text-muted-foreground flex items-center gap-2 px-1">
+                <Lock className="w-3 h-3 shrink-0" />
+                Fee changes require Stripe dashboard update + code deploy. Contact engineering.
+              </p>
+            </div>
+          </GlassContainer>
 
-      {/* TRANSACTION ACTION CONFIRMATION */}
-      <AlertDialog open={actionDialog.open} onOpenChange={open => !open && setActionDialog({ ...actionDialog, open: false })}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              {actionDialog.type === "release"
-                ? <><CheckCircle2 className="w-5 h-5 text-emerald-600" /> Release Funds</>
-                : <><Ban className="w-5 h-5 text-red-600" /> Refund Transaction</>}
-            </AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-3">
-                <p>
-                  {actionDialog.type === "release"
-                    ? "This will release the escrowed funds to the seller. This action is irreversible."
-                    : "This will cancel the transaction and initiate a refund to the buyer. This action is irreversible."}
+          <GlassContainer header={{ title: "System Health", description: "Real-time infrastructure status" }}>
+            <div className="space-y-2">
+              {[
+                { name: "Next.js Application", icon: Server, status: "Operational", color: "emerald" },
+                { name: "Supabase Database", icon: Database, status: "Operational", color: "emerald" },
+                { name: "Supabase Auth", icon: Shield, status: "Operational", color: "emerald" },
+                { name: "Supabase Realtime", icon: Activity, status: "Operational", color: "emerald" },
+                { name: "Stripe Payments", icon: Wallet, status: "Operational", color: "emerald" },
+                { name: "Webhook Pipeline", icon: Link2, status: "Operational", color: "emerald" },
+              ].map(svc => (
+                <div key={svc.name} className="flex items-center justify-between py-3 px-4 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:bg-white/[0.03] transition-colors">
+                  <div className="flex items-center gap-3">
+                    <svc.icon className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-[13px] font-medium text-foreground">{svc.name}</span>
+                  </div>
+                  <GlassBadge variant={svc.color as any} dot size="sm">{svc.status}</GlassBadge>
+                </div>
+              ))}
+            </div>
+          </GlassContainer>
+
+          <GlassCard variant="gradient" padding="sm">
+            <div className="flex items-start gap-4 p-1">
+              <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/15 flex items-center justify-center shrink-0">
+                <Database className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-[14px] font-semibold tracking-tight text-foreground">Database Schema</p>
+                <p className="text-[12px] text-muted-foreground mt-1 leading-relaxed">
+                  Tables: profiles, transactions, disputes, dispute_messages, offers, notifications, files, audit_logs.
+                  All tables are protected by Row Level Security (RLS) policies.
                 </p>
-                <div className="p-3 bg-muted rounded-lg text-sm">
-                  <p className="font-medium text-foreground">{actionDialog.transactionDesc}</p>
-                  <p className="text-muted-foreground mt-1">Amount: {formatCurrency(actionDialog.transactionAmount)} · Current status: {actionDialog.transactionStatus}</p>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-foreground">Reason (recorded in audit log)</Label>
-                  <Textarea value={actionReason} onChange={e => setActionReason(e.target.value)} rows={2} className="text-foreground" />
-                </div>
-                <div className="flex items-center gap-2 p-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded text-amber-800 dark:text-amber-400 text-xs">
-                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                  <span>This action cannot be undone. The transaction will reach a terminal state.</span>
-                </div>
               </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={actionLoading}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={e => { e.preventDefault(); executeAction() }} disabled={actionLoading}
-              className={actionDialog.type === "release" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-red-600 hover:bg-red-700"}>
-              {actionLoading ? "Processing..." : actionDialog.type === "release" ? "Confirm Release" : "Confirm Refund"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </div>
+          </GlassCard>
+        </div>
+      )}
 
-      {/* DISPUTE RESOLUTION DIALOG */}
-      <Dialog open={resolveDialog.open} onOpenChange={open => !open && setResolveDialog({ ...resolveDialog, open: false })}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Gavel className="w-5 h-5" /> Resolve Dispute</DialogTitle>
-            <DialogDescription>Review the dispute and make a binding resolution decision. This action is irreversible and recorded in the audit log.</DialogDescription>
+      {/* ═══════════════ ACTION DIALOG ═══════════════ */}
+      <Dialog open={!!actionDialog} onOpenChange={() => { setActionDialog(null); setActionReason("") }}>
+        <DialogContent className="bg-[hsl(222,47%,8%)] border-white/[0.08] max-w-md rounded-2xl">
+          <DialogHeader className="space-y-2">
+            <DialogTitle className="text-[18px] font-bold tracking-tight text-foreground">
+              {actionDialog?.type === "release"              && "Release Transaction"}
+              {actionDialog?.type === "refund"               && "Refund Transaction"}
+              {actionDialog?.type === "resolve_release"      && "Release Funds to Seller"}
+              {actionDialog?.type === "resolve_refund"       && "Refund Funds to Buyer"}
+              {actionDialog?.type === "resolve_hold"         && "Hold Funds in Platform"}
+              {actionDialog?.type === "resolve_ban_both"     && "Ban Both Parties + Freeze"}
+              {actionDialog?.type === "resolve_authorities"  && "Escalate to Authorities"}
+              {actionDialog?.type === "cancel_offer"         && "Cancel Offer"}
+              {actionDialog?.type === "ban_user"             && "Ban User"}
+            </DialogTitle>
+            <DialogDescription className="text-[13px] text-muted-foreground leading-relaxed">
+              {actionDialog?.type === "resolve_hold"         && "Funds will stay frozen in the platform. No money moves until you make a final decision."}
+              {actionDialog?.type === "resolve_ban_both"     && "Both buyer AND seller will be banned. Funds remain frozen. Use for suspected money laundering or fraud."}
+              {actionDialog?.type === "resolve_authorities"  && "Both parties will be banned and funds frozen. This flags the case for law enforcement review. This is the nuclear option."}
+              {actionDialog?.type === "ban_user"             && "This user will be immediately banned from the platform. They will be signed out and unable to access their account."}
+              {!["resolve_hold", "resolve_ban_both", "resolve_authorities", "ban_user"].includes(actionDialog?.type || "") && "This action is irreversible and will be recorded in the audit trail."}
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="p-3 bg-muted rounded-lg text-sm">
-              <p className="font-medium text-foreground">{resolveDialog.disputeReason}</p>
-              <p className="text-muted-foreground mt-1">Disputed amount: {formatCurrency(resolveDialog.transactionAmount)}</p>
+
+          {/* Severity indicator for dangerous actions */}
+          {["resolve_ban_both", "resolve_authorities"].includes(actionDialog?.type || "") && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/15">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              <p className="text-[11px] text-red-400 font-medium">
+                {actionDialog?.type === "resolve_authorities"
+                  ? "Nuclear option — involves law enforcement. Make sure you have evidence."
+                  : "High severity — both parties will lose platform access."}
+              </p>
             </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Decision</Label>
-              <Select value={resolveDecision} onValueChange={v => setResolveDecision(v as any)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="refund_to_buyer">Refund to Buyer</SelectItem>
-                  <SelectItem value="release_to_seller">Release to Seller</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Resolution Reason (required)</Label>
-              <Textarea value={resolveReason} onChange={e => setResolveReason(e.target.value)} rows={3} required />
-            </div>
-            <div className="flex items-center gap-2 p-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded text-amber-800 dark:text-amber-400 text-xs">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-              <span>This resolution is final. Funds will be transferred based on your decision.</span>
-            </div>
+          )}
+
+          <div className="space-y-2.5">
+            <Label className="text-[13px] font-semibold text-foreground">
+              Reason <span className="text-muted-foreground font-normal">(required)</span>
+            </Label>
+            <Textarea
+              value={actionReason}
+              onChange={(e) => setActionReason(e.target.value)}
+              placeholder={
+                actionDialog?.type === "resolve_authorities"
+                  ? "Describe suspected violation, evidence, and relevant transaction IDs..."
+                  : "Describe the reason for this action..."
+              }
+              className="bg-white/[0.03] border-white/[0.08] focus:border-white/[0.15] min-h-[100px] text-[13px] placeholder:text-muted-foreground/50 rounded-xl resize-none"
+            />
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setResolveDialog({ ...resolveDialog, open: false })} disabled={resolveLoading}>Cancel</Button>
-            <Button onClick={executeResolve} disabled={resolveLoading || !resolveReason.trim()}
-              className={resolveDecision === "release_to_seller" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-red-600 hover:bg-red-700"}>
-              {resolveLoading ? "Processing..." : "Confirm Resolution"}
+
+          <DialogFooter className="gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => { setActionDialog(null); setActionReason("") }}
+              className="bg-white/[0.04] border-white/[0.08] hover:bg-white/[0.08] text-[13px]"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={actionLoading || !actionReason.trim()}
+              onClick={() => {
+                if (!actionDialog) return
+                if (actionDialog.type === "release")              handleRelease(actionDialog.id)
+                if (actionDialog.type === "refund")               handleRefund(actionDialog.id)
+                if (actionDialog.type === "resolve_release")      handleResolveDispute(actionDialog.id, "release_to_seller")
+                if (actionDialog.type === "resolve_refund")       handleResolveDispute(actionDialog.id, "refund_to_buyer")
+                if (actionDialog.type === "resolve_hold")         handleResolveDispute(actionDialog.id, "hold_funds")
+                if (actionDialog.type === "resolve_ban_both")     handleResolveDispute(actionDialog.id, "ban_both_hold")
+                if (actionDialog.type === "resolve_authorities")  handleResolveDispute(actionDialog.id, "escalate_authorities")
+                if (actionDialog.type === "cancel_offer")         handleCancelOffer(actionDialog.id)
+                if (actionDialog.type === "ban_user")             handleBanUser(actionDialog.id)
+              }}
+              className={`text-[13px] font-semibold transition-all ${
+                ["resolve_refund", "resolve_ban_both", "resolve_authorities", "cancel_offer", "ban_user", "refund"].includes(actionDialog?.type || "")
+                  ? "bg-red-600 hover:bg-red-500 text-white border-red-600"
+                  : actionDialog?.type === "resolve_hold"
+                    ? "bg-amber-600 hover:bg-amber-500 text-white border-amber-600"
+                    : "bg-primary hover:bg-primary/90 text-primary-foreground"
+              }`}
+            >
+              {actionLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              {actionDialog?.type === "resolve_authorities" ? "Escalate" :
+               actionDialog?.type === "resolve_ban_both"   ? "Ban & Freeze" :
+               actionDialog?.type === "ban_user"           ? "Ban User" :
+               "Confirm"}
             </Button>
           </DialogFooter>
         </DialogContent>

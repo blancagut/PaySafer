@@ -1,11 +1,45 @@
 "use client"
 
 import React from "react"
-import { useState } from "react"
-import { Eye, EyeOff, Lock, Globe, Bell, Loader2, CheckCircle2 } from "lucide-react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useEffect } from "react"
+import {
+  Eye,
+  EyeOff,
+  Lock,
+  Globe,
+  Bell,
+  Loader2,
+  CheckCircle2,
+  Palette,
+  Monitor,
+  Moon,
+  Sun,
+  Shield,
+  Keyboard,
+  Smartphone,
+  Download,
+  Trash2,
+  Info,
+  Clock,
+  MapPin,
+  UserCheck,
+  Link2,
+  Unplug,
+  Activity,
+  LogOut,
+  Fingerprint,
+  EyeIcon,
+  Users,
+  CreditCard,
+  FileText,
+  AlertTriangle,
+  Zap,
+  Hash,
+} from "lucide-react"
+import { GlassCard, GlassContainer } from "@/components/glass"
+import { GlassInput } from "@/components/glass"
+import { GlassBadge } from "@/components/glass"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -17,232 +51,536 @@ import {
 } from "@/components/ui/select"
 import { toast } from "sonner"
 import { updatePassword } from "@/lib/actions/profile"
+import { useTheme } from "next-themes"
+
+type SettingsSection = "security" | "notifications" | "appearance" | "preferences" | "privacy" | "sessions" | "connected" | "advanced"
 
 export default function SettingsPage() {
+  const { theme, setTheme } = useTheme()
+  const [activeSection, setActiveSection] = useState<SettingsSection>("security")
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [passwordData, setPasswordData] = useState({
-    new: "",
-    confirm: "",
-  })
+  const [passwordData, setPasswordData] = useState({ new: "", confirm: "" })
   const [notifications, setNotifications] = useState({
     email: true,
     transactions: true,
     disputes: true,
+    offers: true,
     marketing: false,
+    realtime: true,
+    sound: true,
+    weeklyDigest: false,
   })
+  const [preferences, setPreferences] = useState({
+    currency: "USD",
+    language: "en",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    dateFormat: "MM/DD/YYYY",
+    compactMode: false,
+    animations: true,
+  })
+  const [privacy, setPrivacy] = useState({
+    profileVisible: true,
+    showFullName: true,
+    showStats: true,
+    showActivity: false,
+    allowSearchByEmail: true,
+  })
+
+  // Persist prefs to localStorage
+  useEffect(() => {
+    const storedNotifs = localStorage.getItem("paysafe-notifications")
+    if (storedNotifs) try { setNotifications(JSON.parse(storedNotifs)) } catch {}
+    const storedPrefs = localStorage.getItem("paysafe-preferences")
+    if (storedPrefs) try { setPreferences(JSON.parse(storedPrefs)) } catch {}
+    const storedPrivacy = localStorage.getItem("paysafe-privacy")
+    if (storedPrivacy) try { setPrivacy(JSON.parse(storedPrivacy)) } catch {}
+  }, [])
+
+  const saveNotifications = (v: typeof notifications) => {
+    setNotifications(v)
+    localStorage.setItem("paysafe-notifications", JSON.stringify(v))
+    toast.success("Saved")
+  }
+  const savePreferences = (v: typeof preferences) => {
+    setPreferences(v)
+    localStorage.setItem("paysafe-preferences", JSON.stringify(v))
+    toast.success("Saved")
+  }
+  const savePrivacy = (v: typeof privacy) => {
+    setPrivacy(v)
+    localStorage.setItem("paysafe-privacy", JSON.stringify(v))
+    toast.success("Saved")
+  }
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    if (passwordData.new.length < 6) {
-      toast.error("Password must be at least 6 characters")
-      return
-    }
-
-    if (passwordData.new !== passwordData.confirm) {
-      toast.error("Passwords do not match")
-      return
-    }
-
+    if (passwordData.new.length < 6) { toast.error("Password must be at least 6 characters"); return }
+    if (passwordData.new !== passwordData.confirm) { toast.error("Passwords do not match"); return }
     setSaving(true)
     try {
       const result = await updatePassword(passwordData.new)
-      if (result.error) {
-        toast.error(result.error)
-      } else {
-        toast.success("Password updated successfully")
-        setPasswordData({ new: "", confirm: "" })
-      }
-    } catch {
-      toast.error("Failed to update password")
-    } finally {
-      setSaving(false)
-    }
+      if (result.error) toast.error(result.error)
+      else { toast.success("Password updated successfully"); setPasswordData({ new: "", confirm: "" }) }
+    } catch { toast.error("Failed to update password") }
+    finally { setSaving(false) }
   }
 
+  const sections: { key: SettingsSection; label: string; icon: React.ReactNode }[] = [
+    { key: "security", label: "Security", icon: <Lock className="w-4 h-4" /> },
+    { key: "notifications", label: "Notifications", icon: <Bell className="w-4 h-4" /> },
+    { key: "appearance", label: "Appearance", icon: <Palette className="w-4 h-4" /> },
+    { key: "preferences", label: "Preferences", icon: <Globe className="w-4 h-4" /> },
+    { key: "privacy", label: "Privacy", icon: <EyeIcon className="w-4 h-4" /> },
+    { key: "sessions", label: "Sessions", icon: <Smartphone className="w-4 h-4" /> },
+    { key: "connected", label: "Connected Apps", icon: <Link2 className="w-4 h-4" /> },
+    { key: "advanced", label: "Advanced", icon: <Shield className="w-4 h-4" /> },
+  ]
+
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div>
+    <div className="space-y-6 pb-20 md:pb-0">
+      <div className="animate-fade-in">
         <h2 className="text-2xl font-bold text-foreground">Settings</h2>
-        <p className="text-muted-foreground mt-1">Manage your account preferences</p>
+        <p className="text-sm text-muted-foreground mt-1">Manage your account preferences</p>
       </div>
 
-      {/* Password change */}
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle className="text-lg text-foreground flex items-center gap-2">
-            <Lock className="w-5 h-5" />
-            Change Password
-          </CardTitle>
-          <CardDescription>
-            Update your password to keep your account secure
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handlePasswordChange} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="newPassword" className="text-foreground">New Password</Label>
-              <div className="relative">
-                <Input
-                  id="newPassword"
-                  type={showNewPassword ? "text" : "password"}
-                  value={passwordData.new}
-                  onChange={(e) => setPasswordData({ ...passwordData, new: e.target.value })}
-                  placeholder="At least 6 characters"
-                  className="pr-10 h-11"
-                  required
-                />
+      <div className="flex flex-col lg:flex-row gap-6">
+        {/* ─── Sidebar Nav ─── */}
+        <div className="lg:w-56 shrink-0">
+          <GlassCard padding="none" className="sticky top-20">
+            <div className="p-2">
+              {sections.map((s) => (
                 <button
-                  type="button"
-                  onClick={() => setShowNewPassword(!showNewPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  key={s.key}
+                  onClick={() => setActiveSection(s.key)}
+                  className={`flex items-center gap-2.5 w-full px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+                    activeSection === s.key
+                      ? "bg-primary/15 text-primary"
+                      : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
+                  }`}
                 >
-                  {showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {s.icon}
+                  {s.label}
                 </button>
-              </div>
+              ))}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword" className="text-foreground">Confirm New Password</Label>
-              <div className="relative">
-                <Input
-                  id="confirmPassword"
-                  type={showConfirmPassword ? "text" : "password"}
-                  value={passwordData.confirm}
-                  onChange={(e) => setPasswordData({ ...passwordData, confirm: e.target.value })}
-                  placeholder="Re-enter new password"
-                  className="pr-10 h-11"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
-            </div>
-            <Button
-              type="submit"
-              disabled={saving || !passwordData.new || !passwordData.confirm}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Updating...
-                </>
-              ) : (
-                "Update Password"
-              )}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+          </GlassCard>
+        </div>
 
-      {/* Notifications */}
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle className="text-lg text-foreground flex items-center gap-2">
-            <Bell className="w-5 h-5" />
-            Notifications
-          </CardTitle>
-          <CardDescription>
-            Choose what notifications you receive
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between py-3 border-b border-border">
-            <div>
-              <p className="font-medium text-foreground">Email Notifications</p>
-              <p className="text-sm text-muted-foreground">Receive notifications via email</p>
-            </div>
-            <Switch
-              checked={notifications.email}
-              onCheckedChange={(checked) => setNotifications({ ...notifications, email: checked })}
-            />
-          </div>
-          <div className="flex items-center justify-between py-3 border-b border-border">
-            <div>
-              <p className="font-medium text-foreground">Transaction Updates</p>
-              <p className="text-sm text-muted-foreground">Get notified about transaction status changes</p>
-            </div>
-            <Switch
-              checked={notifications.transactions}
-              onCheckedChange={(checked) => setNotifications({ ...notifications, transactions: checked })}
-            />
-          </div>
-          <div className="flex items-center justify-between py-3 border-b border-border">
-            <div>
-              <p className="font-medium text-foreground">Dispute Alerts</p>
-              <p className="text-sm text-muted-foreground">Important updates about disputes</p>
-            </div>
-            <Switch
-              checked={notifications.disputes}
-              onCheckedChange={(checked) => setNotifications({ ...notifications, disputes: checked })}
-            />
-          </div>
-          <div className="flex items-center justify-between py-3">
-            <div>
-              <p className="font-medium text-foreground">Marketing Emails</p>
-              <p className="text-sm text-muted-foreground">News, tips, and product updates</p>
-            </div>
-            <Switch
-              checked={notifications.marketing}
-              onCheckedChange={(checked) => setNotifications({ ...notifications, marketing: checked })}
-            />
-          </div>
-          <p className="text-xs text-muted-foreground pt-2">
-            <CheckCircle2 className="w-3 h-3 inline mr-1" />
-            Notification preferences are saved locally. System notifications (transaction confirmations, dispute updates) are always sent.
-          </p>
-        </CardContent>
-      </Card>
+        {/* ─── Content ─── */}
+        <div className="flex-1 max-w-2xl space-y-6">
 
-      {/* Preferences */}
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle className="text-lg text-foreground flex items-center gap-2">
-            <Globe className="w-5 h-5" />
-            Preferences
-          </CardTitle>
-          <CardDescription>
-            Customize your experience
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-foreground">Default Currency</Label>
-            <Select defaultValue="USD">
-              <SelectTrigger className="h-11">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="USD">USD - US Dollar</SelectItem>
-                <SelectItem value="EUR">EUR - Euro</SelectItem>
-                <SelectItem value="GBP">GBP - British Pound</SelectItem>
-                <SelectItem value="CAD">CAD - Canadian Dollar</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-foreground">Language</Label>
-            <Select defaultValue="en">
-              <SelectTrigger className="h-11">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="es">Spanish</SelectItem>
-                <SelectItem value="fr">French</SelectItem>
-                <SelectItem value="de">German</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
+          {/* ═══ SECURITY ═══ */}
+          {activeSection === "security" && (
+            <div className="space-y-6 animate-fade-in">
+              <GlassContainer header={{ title: "Change Password", description: "Update your password to keep your account secure" }}>
+                <form onSubmit={handlePasswordChange} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="newPassword" className="text-foreground text-sm">New Password</Label>
+                    <div className="relative">
+                      <GlassInput id="newPassword" type={showNewPassword ? "text" : "password"} value={passwordData.new}
+                        onChange={(e) => setPasswordData({ ...passwordData, new: e.target.value })} placeholder="At least 6 characters" icon={<Lock className="w-3.5 h-3.5" />} required />
+                      <button type="button" onClick={() => setShowNewPassword(!showNewPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                        {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="confirmPassword" className="text-foreground text-sm">Confirm Password</Label>
+                    <div className="relative">
+                      <GlassInput id="confirmPassword" type={showConfirmPassword ? "text" : "password"} value={passwordData.confirm}
+                        onChange={(e) => setPasswordData({ ...passwordData, confirm: e.target.value })} placeholder="Re-enter new password" icon={<Lock className="w-3.5 h-3.5" />} required />
+                      <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                        {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <Button type="submit" disabled={saving || !passwordData.new || !passwordData.confirm} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                    {saving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Updating...</> : "Update Password"}
+                  </Button>
+                </form>
+              </GlassContainer>
+
+              {/* 2FA + Login Activity */}
+              <GlassContainer header={{ title: "Authentication", description: "Additional security measures" }}>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center"><Fingerprint className="w-4.5 h-4.5 text-primary" /></div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Two-Factor Authentication</p>
+                        <p className="text-xs text-muted-foreground">Add an authenticator app for extra security</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-medium text-primary bg-primary/10 px-2 py-1 rounded-full">Coming soon</span>
+                  </div>
+                  <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center"><Activity className="w-4.5 h-4.5 text-amber-400" /></div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Login Alerts</p>
+                        <p className="text-xs text-muted-foreground">Get notified on new device logins</p>
+                      </div>
+                    </div>
+                    <Switch checked={true} />
+                  </div>
+                  <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center"><Shield className="w-4.5 h-4.5 text-blue-400" /></div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Require Password on Actions</p>
+                        <p className="text-xs text-muted-foreground">Confirm password for releases &gt; $500</p>
+                      </div>
+                    </div>
+                    <Switch checked={true} />
+                  </div>
+                </div>
+              </GlassContainer>
+            </div>
+          )}
+
+          {/* ═══ NOTIFICATIONS ═══ */}
+          {activeSection === "notifications" && (
+            <GlassContainer header={{ title: "Notifications", description: "Choose what notifications you receive" }} className="animate-fade-in">
+              <div className="space-y-1">
+                {[
+                  { key: "email" as const, title: "Email Notifications", desc: "Receive notifications via email", icon: <Bell className="w-4 h-4" /> },
+                  { key: "transactions" as const, title: "Transaction Updates", desc: "Status changes and payment confirmations", icon: <CreditCard className="w-4 h-4" /> },
+                  { key: "disputes" as const, title: "Dispute Alerts", desc: "Important dispute updates and resolution", icon: <AlertTriangle className="w-4 h-4" /> },
+                  { key: "offers" as const, title: "Offer Activity", desc: "When someone accepts or views your offers", icon: <Link2 className="w-4 h-4" /> },
+                  { key: "realtime" as const, title: "Real-time Push", desc: "In-app instant notifications", icon: <Zap className="w-4 h-4" /> },
+                  { key: "sound" as const, title: "Notification Sound", desc: "Play a sound for new notifications", icon: <Activity className="w-4 h-4" /> },
+                  { key: "weeklyDigest" as const, title: "Weekly Digest", desc: "Summary of your activity every Monday", icon: <FileText className="w-4 h-4" /> },
+                  { key: "marketing" as const, title: "Marketing Emails", desc: "News, tips, and product updates", icon: <Globe className="w-4 h-4" /> },
+                ].map((item) => (
+                  <div key={item.key} className="flex items-center justify-between py-3.5 px-3 rounded-lg hover:bg-white/[0.03] transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center text-muted-foreground">{item.icon}</div>
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{item.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                      </div>
+                    </div>
+                    <Switch checked={notifications[item.key]} onCheckedChange={(checked) => saveNotifications({ ...notifications, [item.key]: checked })} />
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-4 flex items-center gap-1.5">
+                <Info className="w-3 h-3" />
+                System-critical notifications (security alerts, transaction confirmations) are always sent.
+              </p>
+            </GlassContainer>
+          )}
+
+          {/* ═══ APPEARANCE ═══ */}
+          {activeSection === "appearance" && (
+            <GlassContainer header={{ title: "Appearance", description: "Customize how PaySafer looks" }} className="animate-fade-in">
+              <div className="space-y-6">
+                <div>
+                  <Label className="text-sm text-foreground font-medium">Theme</Label>
+                  <div className="grid grid-cols-3 gap-3 mt-3">
+                    {[
+                      { value: "dark", label: "Dark", icon: Moon, desc: "Easy on the eyes" },
+                      { value: "light", label: "Light", icon: Sun, desc: "Classic look" },
+                      { value: "system", label: "System", icon: Monitor, desc: "Match device" },
+                    ].map((t) => (
+                      <button key={t.value} onClick={() => setTheme(t.value)}
+                        className={`p-4 rounded-xl border text-left transition-all ${theme === t.value ? "border-primary/40 bg-primary/10 shadow-lg shadow-primary/5" : "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06]"}`}>
+                        <t.icon className={`w-5 h-5 mb-2 ${theme === t.value ? "text-primary" : "text-muted-foreground"}`} />
+                        <p className={`text-sm font-semibold ${theme === t.value ? "text-primary" : "text-foreground"}`}>{t.label}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{t.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-white/[0.06]">
+                  <div className="flex items-center justify-between py-3 px-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Animations</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Enable motion effects and transitions</p>
+                    </div>
+                    <Switch checked={preferences.animations} onCheckedChange={(v) => savePreferences({ ...preferences, animations: v })} />
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-white/[0.06]">
+                  <Label className="text-sm text-foreground font-medium">Keyboard Shortcuts</Label>
+                  <div className="mt-3 space-y-2">
+                    {[
+                      { keys: ["Ctrl", "K"], action: "Command palette" },
+                      { keys: ["Ctrl", "B"], action: "Toggle sidebar" },
+                      { keys: ["Ctrl", "N"], action: "New offer" },
+                      { keys: ["Esc"], action: "Close modal / palette" },
+                    ].map((shortcut, i) => (
+                      <div key={i} className="flex items-center justify-between py-2 px-3 rounded-lg bg-white/[0.03]">
+                        <span className="text-xs text-muted-foreground">{shortcut.action}</span>
+                        <div className="flex items-center gap-1">
+                          {shortcut.keys.map((k) => (
+                            <kbd key={k} className="px-2 py-1 text-[10px] font-mono font-semibold rounded bg-white/[0.08] border border-white/[0.10] text-foreground">{k}</kbd>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </GlassContainer>
+          )}
+
+          {/* ═══ PREFERENCES ═══ */}
+          {activeSection === "preferences" && (
+            <GlassContainer header={{ title: "Preferences", description: "Customize your experience" }} className="animate-fade-in">
+              <div className="space-y-5">
+                <div className="space-y-2">
+                  <Label className="text-sm text-foreground font-medium">Default Currency</Label>
+                  <Select value={preferences.currency} onValueChange={(v) => savePreferences({ ...preferences, currency: v })}>
+                    <SelectTrigger className="h-11 bg-white/[0.03] border-white/[0.08]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {["USD - US Dollar", "EUR - Euro", "GBP - British Pound", "CAD - Canadian Dollar", "AUD - Australian Dollar", "CHF - Swiss Franc", "JPY - Japanese Yen", "CNY - Chinese Yuan", "INR - Indian Rupee", "BRL - Brazilian Real"].map((c) => {
+                        const code = c.split(" - ")[0]
+                        return <SelectItem key={code} value={code}>{c}</SelectItem>
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm text-foreground font-medium">Language</Label>
+                  <Select value={preferences.language} onValueChange={(v) => savePreferences({ ...preferences, language: v })}>
+                    <SelectTrigger className="h-11 bg-white/[0.03] border-white/[0.08]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[["en", "English"], ["es", "Espanol"], ["fr", "Francais"], ["de", "Deutsch"], ["pt", "Portugues"], ["ar", "Arabic"], ["zh", "Chinese"], ["ja", "Japanese"], ["ko", "Korean"], ["hi", "Hindi"]].map(([v, l]) => (
+                        <SelectItem key={v} value={v}>{l}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm text-foreground font-medium">Timezone</Label>
+                  <Select value={preferences.timezone} onValueChange={(v) => savePreferences({ ...preferences, timezone: v })}>
+                    <SelectTrigger className="h-11 bg-white/[0.03] border-white/[0.08]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {["UTC", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "America/Sao_Paulo", "Europe/London", "Europe/Paris", "Europe/Berlin", "Asia/Dubai", "Asia/Shanghai", "Asia/Tokyo", "Asia/Kolkata", "Australia/Sydney"].map((tz) => (
+                        <SelectItem key={tz} value={tz}>{tz.replace(/_/g, " ")}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm text-foreground font-medium">Date Format</Label>
+                  <Select value={preferences.dateFormat} onValueChange={(v) => savePreferences({ ...preferences, dateFormat: v })}>
+                    <SelectTrigger className="h-11 bg-white/[0.03] border-white/[0.08]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="MM/DD/YYYY">MM/DD/YYYY (US)</SelectItem>
+                      <SelectItem value="DD/MM/YYYY">DD/MM/YYYY (EU)</SelectItem>
+                      <SelectItem value="YYYY-MM-DD">YYYY-MM-DD (ISO)</SelectItem>
+                      <SelectItem value="DD.MM.YYYY">DD.MM.YYYY (DE)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="pt-2 space-y-2">
+                  <div className="flex items-center justify-between py-3.5 px-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Compact Mode</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Reduce spacing for denser display</p>
+                    </div>
+                    <Switch checked={preferences.compactMode} onCheckedChange={(v) => savePreferences({ ...preferences, compactMode: v })} />
+                  </div>
+                </div>
+              </div>
+            </GlassContainer>
+          )}
+
+          {/* ═══ PRIVACY ═══ */}
+          {activeSection === "privacy" && (
+            <GlassContainer header={{ title: "Privacy", description: "Control who can see your information" }} className="animate-fade-in">
+              <div className="space-y-1">
+                {[
+                  { key: "profileVisible" as const, title: "Public Profile", desc: "Allow others to view your profile page" },
+                  { key: "showFullName" as const, title: "Show Full Name", desc: "Display your name to counterparties" },
+                  { key: "showStats" as const, title: "Show Transaction Stats", desc: "Let others see your success rate and volume" },
+                  { key: "showActivity" as const, title: "Show Online Status", desc: "Show when you were last active" },
+                  { key: "allowSearchByEmail" as const, title: "Discoverable by Email", desc: "Allow people to find you by email address" },
+                ].map((item) => (
+                  <div key={item.key} className="flex items-center justify-between py-3.5 px-3 rounded-lg hover:bg-white/[0.03] transition-colors">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{item.title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                    </div>
+                    <Switch checked={privacy[item.key]} onCheckedChange={(checked) => savePrivacy({ ...privacy, [item.key]: checked })} />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 p-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <Shield className="w-3 h-3" />
+                  Your email and user ID are never shared publicly. Only counterparties in active transactions see your email.
+                </p>
+              </div>
+            </GlassContainer>
+          )}
+
+          {/* ═══ SESSIONS ═══ */}
+          {activeSection === "sessions" && (
+            <div className="space-y-6 animate-fade-in">
+              <GlassContainer header={{ title: "Active Sessions", description: "Devices where you're currently logged in" }}>
+                <div className="space-y-3">
+                  {/* Current session */}
+                  <div className="flex items-center justify-between p-4 rounded-lg bg-primary/[0.05] border border-primary/20">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center"><Monitor className="w-5 h-5 text-primary" /></div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-foreground">This Device</p>
+                          <GlassBadge variant="emerald" size="sm">Current</GlassBadge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">Windows · Chrome · Last active now</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Example session */}
+                  <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-white/[0.06] flex items-center justify-center"><Smartphone className="w-5 h-5 text-muted-foreground" /></div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">iPhone 15</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">iOS · Safari · Last active 2h ago</p>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" className="text-red-400 border-red-500/20 hover:bg-red-500/10 hover:text-red-300 text-xs">
+                      <LogOut className="w-3 h-3 mr-1" /> Revoke
+                    </Button>
+                  </div>
+                </div>
+              </GlassContainer>
+
+              <GlassCard padding="sm">
+                <Button variant="outline" size="sm" className="text-red-400 border-red-500/20 hover:bg-red-500/10 hover:text-red-300 w-full">
+                  <LogOut className="w-3.5 h-3.5 mr-1.5" /> Sign Out of All Other Devices
+                </Button>
+                <p className="text-[11px] text-muted-foreground mt-2 text-center">This will invalidate all sessions except your current one.</p>
+              </GlassCard>
+            </div>
+          )}
+
+          {/* ═══ CONNECTED APPS ═══ */}
+          {activeSection === "connected" && (
+            <div className="space-y-6 animate-fade-in">
+              <GlassContainer header={{ title: "Connected Services", description: "Third-party integrations and payment methods" }}>
+                <div className="space-y-3">
+                  {/* Stripe */}
+                  <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-600 to-indigo-800 flex items-center justify-center">
+                        <span className="text-[9px] font-bold text-white tracking-wider">STRIPE</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Stripe Payment</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Process escrow payments securely</p>
+                      </div>
+                    </div>
+                    <GlassBadge variant="amber" size="sm">Coming soon</GlassBadge>
+                  </div>
+
+                  {/* Google */}
+                  <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-white/[0.08] flex items-center justify-center text-lg font-bold text-foreground">G</div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Google Account</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Sign in with Google for faster access</p>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" className="bg-white/[0.04] border-white/[0.10] hover:bg-white/[0.08] text-xs">Connect</Button>
+                  </div>
+
+                  {/* Webhooks */}
+                  <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-white/[0.08] flex items-center justify-center"><Hash className="w-5 h-5 text-muted-foreground" /></div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Webhooks</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Receive real-time events to your server</p>
+                      </div>
+                    </div>
+                    <GlassBadge variant="amber" size="sm">Coming soon</GlassBadge>
+                  </div>
+
+                  {/* API Key */}
+                  <div className="flex items-center justify-between p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-white/[0.08] flex items-center justify-center"><Lock className="w-5 h-5 text-muted-foreground" /></div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">API Access</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Generate API keys for programmatic access</p>
+                      </div>
+                    </div>
+                    <GlassBadge variant="amber" size="sm">Coming soon</GlassBadge>
+                  </div>
+                </div>
+              </GlassContainer>
+            </div>
+          )}
+
+          {/* ═══ ADVANCED ═══ */}
+          {activeSection === "advanced" && (
+            <div className="space-y-6 animate-fade-in">
+              <GlassContainer header={{ title: "Data & Export", description: "Manage your data" }}>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <div className="flex items-center gap-3">
+                      <Download className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Export Transactions</p>
+                        <p className="text-xs text-muted-foreground">Download CSV of all your transactions</p>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" className="bg-white/[0.04] border-white/[0.10] hover:bg-white/[0.08]">Export CSV</Button>
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Export Offers</p>
+                        <p className="text-xs text-muted-foreground">Download all your offer history</p>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" className="bg-white/[0.04] border-white/[0.10] hover:bg-white/[0.08]">Export</Button>
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <div className="flex items-center gap-3">
+                      <Download className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Download Account Data</p>
+                        <p className="text-xs text-muted-foreground">Get a copy of all your data (GDPR)</p>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" className="bg-white/[0.04] border-white/[0.10] hover:bg-white/[0.08]">Request</Button>
+                  </div>
+                </div>
+              </GlassContainer>
+
+              <GlassCard padding="sm" className="border-red-500/10">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-red-500/10 flex items-center justify-center shrink-0 mt-0.5"><Trash2 className="w-4 h-4 text-red-400" /></div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-foreground">Danger Zone</p>
+                    <p className="text-xs text-muted-foreground mt-1">Once you delete your account, all data will be permanently removed. This cannot be undone.</p>
+                    <Button variant="outline" size="sm" className="mt-3 text-red-400 border-red-500/20 hover:bg-red-500/10 hover:text-red-300">Delete Account</Button>
+                  </div>
+                </div>
+              </GlassCard>
+            </div>
+          )}
+
+        </div>
+      </div>
     </div>
   )
 }
