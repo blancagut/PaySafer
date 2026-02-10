@@ -142,15 +142,26 @@ export async function getOfferByToken(token: string) {
   const { data, error } = await supabase
     .from('offers')
     .select(`
-      id, title, description, amount, currency, creator_role, 
-      token, status, expires_at, created_at,
-      creator:profiles!offers_creator_id_fkey(full_name, email)
+      id, title, description, amount, currency, creator_role,
+      creator_id, token, status, expires_at, created_at
     `)
     .eq('token', token)
     .single()
 
   if (error) {
     return { error: 'Offer not found' }
+  }
+
+  // Fetch creator profile separately (may be null if RLS blocks cross-user reads)
+  let creator: { full_name: string | null; email: string } = { full_name: null, email: 'Unknown' }
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('full_name, email')
+    .eq('id', data.creator_id)
+    .single()
+
+  if (profile) {
+    creator = profile
   }
 
   // Check expiry
@@ -165,7 +176,7 @@ export async function getOfferByToken(token: string) {
     return { error: 'This offer has expired' }
   }
 
-  const isCreator = user?.id === (data as any).creator_id
+  const isCreator = user?.id === data.creator_id
   const isExpired = data.status === 'expired'
   const isAccepted = data.status === 'accepted'
   const isCancelled = data.status === 'cancelled'
@@ -173,6 +184,7 @@ export async function getOfferByToken(token: string) {
   return {
     data: {
       ...data,
+      creator,
       isCreator,
       isExpired,
       isAccepted,

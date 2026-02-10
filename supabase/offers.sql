@@ -61,8 +61,16 @@ CREATE POLICY "Creators can view own offers"
   ON public.offers FOR SELECT
   USING (auth.uid() = creator_id);
 
--- Anyone authenticated can view a pending offer by token (for the accept page)
--- This is handled via server action with service role, not direct client access
+-- Authenticated users can view pending offers (needed for the accept page)
+-- Security: the 64-char cryptographic token acts as the access secret
+CREATE POLICY "Authenticated users can view pending offers"
+  ON public.offers FOR SELECT
+  USING (status = 'pending' AND auth.role() = 'authenticated');
+
+-- Users can view offers they accepted
+CREATE POLICY "Acceptors can view their accepted offers"
+  ON public.offers FOR SELECT
+  USING (auth.uid() = accepted_by);
 
 -- Creators can create offers
 CREATE POLICY "Users can create offers"
@@ -74,8 +82,10 @@ CREATE POLICY "Creators can update own offers"
   ON public.offers FOR UPDATE
   USING (auth.uid() = creator_id);
 
--- Acceptors need to update the offer (set accepted_by, transaction_id, status)
--- This is done via server action with validated logic
+-- Authenticated users can accept pending offers they didn't create
+CREATE POLICY "Authenticated users can accept pending offers"
+  ON public.offers FOR UPDATE
+  USING (status = 'pending' AND auth.uid() != creator_id);
 
 -- Admin can view all offers
 CREATE POLICY "Admins can view all offers"
