@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import crypto from 'crypto'
 
@@ -134,12 +135,14 @@ export async function getMyOffers(filters: OfferFilters = {}) {
 // GET OFFER BY TOKEN (for the public accept page)
 // ============================================================================
 export async function getOfferByToken(token: string) {
-  const supabase = await createClient()
+  // Use admin client so the offer is readable even by unauthenticated visitors
+  const admin = createAdminClient()
 
-  // We need auth to check if user is the creator (to prevent self-accept)
+  // Check if visitor is logged in (optional — page is public)
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from('offers')
     .select(`
       id, title, description, amount, currency, creator_role,
@@ -152,9 +155,9 @@ export async function getOfferByToken(token: string) {
     return { error: 'Offer not found' }
   }
 
-  // Fetch creator profile separately (may be null if RLS blocks cross-user reads)
+  // Fetch creator profile (admin client bypasses cross-user RLS)
   let creator: { full_name: string | null; email: string } = { full_name: null, email: 'Unknown' }
-  const { data: profile } = await supabase
+  const { data: profile } = await admin
     .from('profiles')
     .select('full_name, email')
     .eq('id', data.creator_id)
@@ -167,7 +170,7 @@ export async function getOfferByToken(token: string) {
   // Check expiry
   if (data.expires_at && new Date(data.expires_at) < new Date()) {
     // Auto-expire
-    await supabase
+    await admin
       .from('offers')
       .update({ status: 'expired' })
       .eq('id', data.id)
@@ -236,15 +239,20 @@ export async function acceptOffer(token: string) {
   const buyer_id = offer.creator_role === 'buyer' ? offer.creator_id : user.id
   const seller_id = offer.creator_role === 'seller' ? offer.creator_id : user.id
 
+  // Use admin client for the insert — the RLS INSERT policy only allows
+  // auth.uid() = buyer_id, but when the acceptor is the seller the insert
+  // would be blocked.  The admin (service_role) client bypasses RLS.
+  const admin = createAdminClient()
+
   // Get seller email for the transaction
-  const { data: sellerProfile } = await supabase
+  const { data: sellerProfile } = await admin
     .from('profiles')
     .select('email')
     .eq('id', seller_id)
     .single()
 
-  // Create the transaction
-  const { data: transaction, error: txnError } = await supabase
+  // Create the transaction (service_role bypasses RLS)
+  const { data: transaction, error: txnError } = await admin
     .from('transactions')
     .insert({
       description: offer.title,
@@ -266,8 +274,8 @@ export async function acceptOffer(token: string) {
     return { error: txnError.message }
   }
 
-  // Update the offer to accepted
-  const { error: updateError } = await supabase
+  // Update the offer to accepted (also via admin to avoid RLS edge cases)
+  const { error: updateError } = await admin
     .from('offers')
     .update({
       status: 'accepted',

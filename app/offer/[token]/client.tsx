@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Shield, User, DollarSign, FileText, CheckCircle2, XCircle, Loader2 } from "lucide-react"
+import { Shield, User, DollarSign, FileText, CheckCircle2, XCircle, Loader2, LogIn } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -21,10 +21,11 @@ interface OfferData {
   created_at: string
   canAccept: boolean
   isCreator: boolean
+  isAuthenticated: boolean
   creator: { full_name: string | null; email: string }
 }
 
-export function OfferAcceptClient({ offer, token }: { offer: OfferData; token: string }) {
+export function OfferAcceptClient({ offer, token, isAuthenticated }: { offer: OfferData; token: string; isAuthenticated: boolean }) {
   const router = useRouter()
   const [accepting, setAccepting] = useState(false)
   const [accepted, setAccepted] = useState(false)
@@ -178,22 +179,41 @@ export function OfferAcceptClient({ offer, token }: { offer: OfferData; token: s
       </Card>
 
       <div className="space-y-3">
-        <Button onClick={handleAccept} disabled={accepting || !offer.canAccept} className="w-full" size="lg">
-          {accepting ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Accepting...
-            </>
-          ) : (
-            <>
-              <CheckCircle2 className="w-4 h-4 mr-2" />
-              Accept Offer
-            </>
-          )}
-        </Button>
-        <p className="text-xs text-center text-muted-foreground">
-          By accepting, you agree to participate in this escrow transaction as the <strong>{yourRole.toLowerCase()}</strong>.
-        </p>
+        {!isAuthenticated ? (
+          <>
+            <Button asChild className="w-full" size="lg">
+              <a href={`/register?redirect=/offer/${token}`}>
+                <LogIn className="w-4 h-4 mr-2" />
+                Create Account to Accept
+              </a>
+            </Button>
+            <p className="text-xs text-center text-muted-foreground">
+              Already have an account?{' '}
+              <a href={`/login?redirect=/offer/${token}`} className="text-primary hover:underline">
+                Sign in
+              </a>
+            </p>
+          </>
+        ) : (
+          <>
+            <Button onClick={handleAccept} disabled={accepting || !offer.canAccept} className="w-full" size="lg">
+              {accepting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Accepting...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  Accept Offer
+                </>
+              )}
+            </Button>
+            <p className="text-xs text-center text-muted-foreground">
+              By accepting, you agree to participate in this escrow transaction as the <strong>{yourRole.toLowerCase()}</strong>.
+            </p>
+          </>
+        )}
       </div>
     </div>
   )

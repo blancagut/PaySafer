@@ -1,8 +1,8 @@
 "use client"
 
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, Suspense } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Eye, EyeOff, Check, Shield, ArrowRight, Lock, Zap, Globe } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,7 +27,17 @@ const strengthLabels = ["", "Weak", "Fair", "Good", "Strong", "Excellent"]
 const strengthColors = ["", "bg-red-500", "bg-amber-500", "bg-amber-400", "bg-emerald-400", "bg-emerald-500"]
 
 export default function RegisterPage() {
+  return (
+    <Suspense>
+      <RegisterPageInner />
+    </Suspense>
+  )
+}
+
+function RegisterPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirectTo = searchParams.get("redirect")
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -62,7 +72,7 @@ export default function RegisterPage() {
       })
       if (error) { toast.error(error.message); return }
       toast.success("Account created! Check your email to verify.")
-      router.push("/login")
+      router.push(redirectTo ? `/login?redirect=${encodeURIComponent(redirectTo)}` : "/login")
     } catch {
       toast.error("An unexpected error occurred")
     } finally {

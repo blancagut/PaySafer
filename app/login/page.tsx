@@ -23,6 +23,7 @@ function LoginPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const isBanned = searchParams.get("banned") === "1"
+  const redirectTo = searchParams.get("redirect")
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -36,7 +37,7 @@ function LoginPageInner() {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) { toast.error(error.message); return }
       toast.success("Logged in successfully!")
-      router.push("/dashboard")
+      router.push(redirectTo || "/dashboard")
       router.refresh()
     } catch {
       toast.error("An unexpected error occurred")
