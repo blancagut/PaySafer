@@ -143,15 +143,33 @@ function ChartTooltip({ active, payload, label }: any) {
 
 type AdminTab = "overview" | "revenue" | "transactions" | "disputes" | "users" | "offers" | "audit" | "config"
 
-const tabs: { key: AdminTab; label: string; icon: React.ReactNode }[] = [
-  { key: "overview",     label: "Overview",      icon: <LayoutDashboard className="w-4 h-4" /> },
-  { key: "revenue",      label: "Revenue",       icon: <DollarSign className="w-4 h-4" /> },
-  { key: "transactions", label: "Transactions",  icon: <History className="w-4 h-4" /> },
-  { key: "disputes",     label: "Disputes",      icon: <AlertTriangle className="w-4 h-4" /> },
-  { key: "users",        label: "Users",         icon: <Users className="w-4 h-4" /> },
-  { key: "offers",       label: "Offers",        icon: <FileText className="w-4 h-4" /> },
-  { key: "audit",        label: "Audit Log",     icon: <Fingerprint className="w-4 h-4" /> },
-  { key: "config",       label: "Config",        icon: <Settings className="w-4 h-4" /> },
+type TabItem = { key: AdminTab; label: string; icon: React.ReactNode; warn?: boolean }
+type TabGroup = { group: string; tabs: TabItem[] }
+
+const tabGroups: TabGroup[] = [
+  {
+    group: "Monitor",
+    tabs: [
+      { key: "overview",     label: "Overview",      icon: <LayoutDashboard className="w-4 h-4" /> },
+      { key: "revenue",      label: "Revenue",       icon: <DollarSign className="w-4 h-4" /> },
+    ],
+  },
+  {
+    group: "Operations",
+    tabs: [
+      { key: "transactions", label: "Transactions",  icon: <History className="w-4 h-4" /> },
+      { key: "disputes",     label: "Disputes",      icon: <AlertTriangle className="w-4 h-4" /> },
+      { key: "users",        label: "Users",         icon: <Users className="w-4 h-4" /> },
+      { key: "offers",       label: "Offers",        icon: <FileText className="w-4 h-4" /> },
+    ],
+  },
+  {
+    group: "System",
+    tabs: [
+      { key: "audit",        label: "Audit Log",     icon: <Fingerprint className="w-4 h-4" /> },
+      { key: "config",       label: "Config",        icon: <Settings className="w-4 h-4" />, warn: true },
+    ],
+  },
 ]
 
 /* в”Ђв”Ђв”Ђ Pagination в”Ђв”Ђв”Ђ */
@@ -526,31 +544,57 @@ export default function AdminPage() {
       </div>
 
       {/* в”Ђв”Ђв”Ђ Tab Navigation в”Ђв”Ђв”Ђ */}
-      <nav className="flex items-center gap-1 bg-white/[0.02] rounded-xl p-1.5 border border-white/[0.06] overflow-x-auto scrollbar-none">
-        {tabs.map((tab) => {
-          const isActive = activeTab === tab.key
-          const disputeCount = stats?.activeDisputes
-          const showBadge = tab.key === "disputes" && disputeCount > 0
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`relative flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium rounded-lg whitespace-nowrap transition-all duration-200 ${
-                isActive
-                  ? "bg-white/[0.08] text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
-              }`}
-            >
-              <span className={isActive ? "text-primary" : ""}>{tab.icon}</span>
-              <span className="hidden sm:inline">{tab.label}</span>
-              {showBadge && (
-                <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold bg-red-500/15 text-red-400 rounded-md tabular-nums">
-                  {disputeCount}
-                </span>
-              )}
-            </button>
-          )
-        })}
+      <nav className="flex items-center bg-white/[0.02] rounded-xl p-1.5 border border-white/[0.06] overflow-x-auto scrollbar-none">
+        {tabGroups.map((group, gi) => (
+          <React.Fragment key={group.group}>
+            {/* Group divider */}
+            {gi > 0 && (
+              <div className="flex items-center px-1 shrink-0 self-stretch">
+                <div className="w-px h-6 bg-white/[0.08]" />
+              </div>
+            )}
+
+            {/* Group label + tabs */}
+            <div className="flex items-center gap-0.5 shrink-0">
+              <span className="hidden lg:inline text-[9px] font-bold uppercase tracking-[0.15em] text-muted-foreground/40 px-2 select-none">
+                {group.group}
+              </span>
+              {group.tabs.map((tab) => {
+                const isActive = activeTab === tab.key
+                const disputeCount = stats?.activeDisputes
+                const showBadge = tab.key === "disputes" && disputeCount > 0
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`relative flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium rounded-lg whitespace-nowrap transition-all duration-200 ${
+                      isActive
+                        ? tab.warn
+                          ? "bg-amber-500/10 text-amber-300 shadow-sm ring-1 ring-amber-500/20"
+                          : "bg-white/[0.08] text-foreground shadow-sm"
+                        : tab.warn
+                          ? "text-muted-foreground hover:text-amber-300 hover:bg-amber-500/[0.06]"
+                          : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    <span className={isActive ? (tab.warn ? "text-amber-400" : "text-primary") : ""}>
+                      {tab.icon}
+                    </span>
+                    <span className="hidden sm:inline">{tab.label}</span>
+                    {showBadge && (
+                      <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold bg-red-500/15 text-red-400 rounded-md tabular-nums">
+                        {disputeCount}
+                      </span>
+                    )}
+                    {tab.warn && !isActive && (
+                      <span className="hidden sm:inline w-1.5 h-1.5 rounded-full bg-amber-500/60 ml-0.5" />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </React.Fragment>
+        ))}
       </nav>
 
       {/* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ OVERVIEW TAB в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */}

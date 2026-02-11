@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { notifyDisputeUpdate } from './notifications'
 
 export interface Dispute {
   id: string
@@ -117,6 +118,18 @@ export async function createDispute(input: {
     .update({ status: 'dispute' })
     .eq('id', input.transaction_id)
 
+  // Notify the other party in the transaction
+  const otherPartyId = transaction.buyer_id === user.id ? transaction.seller_id : transaction.buyer_id
+  if (otherPartyId) {
+    await notifyDisputeUpdate({
+      disputeId: dispute.id,
+      transactionId: input.transaction_id,
+      recipientId: otherPartyId,
+      type: 'opened',
+      message: `A dispute has been opened for "${transaction.description}": ${input.reason}`,
+    })
+  }
+
   revalidatePath('/disputes')
   revalidatePath('/transactions')
   revalidatePath(`/transactions/${input.transaction_id}`)
@@ -172,6 +185,31 @@ export async function addDisputeMessage(disputeId: string, message: string) {
 
   if (error) {
     return { error: error.message }
+  }
+
+  // Notify the other party in the dispute
+  try {
+    const { data: dispute } = await supabase
+      .from('disputes')
+      .select('transaction_id, transaction:transactions(buyer_id, seller_id)')
+      .eq('id', disputeId)
+      .single()
+
+    if (dispute?.transaction) {
+      const txn = dispute.transaction as unknown as { buyer_id: string; seller_id: string }
+      const recipientId = txn.buyer_id === user.id ? txn.seller_id : txn.buyer_id
+      if (recipientId) {
+        await notifyDisputeUpdate({
+          disputeId,
+          transactionId: dispute.transaction_id,
+          recipientId,
+          type: 'message',
+          message: `New message in dispute: "${message.slice(0, 100)}${message.length > 100 ? '...' : ''}"`,
+        })
+      }
+    }
+  } catch {
+    // Notification failure should never block the dispute message
   }
 
   revalidatePath(`/disputes/${disputeId}`)

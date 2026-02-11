@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { insertSystemMessage } from './transaction-messages'
+import { notifyTransactionStatusChange } from './notifications'
 
 // Lazy import to avoid circular dependency
 async function creditWallet(userId: string, amount: number, transactionId: string) {
@@ -297,6 +298,18 @@ export async function markDelivered(id: string) {
 
   await insertSystemMessage(id, 'Seller has marked this transaction as delivered. Buyer, please inspect and confirm.', 'milestone', { event: 'delivery_submitted' })
 
+  // Notify buyer
+  await notifyTransactionStatusChange({
+    transactionId: id,
+    buyerId: txn.buyer_id,
+    sellerId: txn.seller_id,
+    newStatus: 'delivered',
+    description: txn.description,
+    amount: Number(txn.amount),
+    currency: txn.currency,
+    actorId: user.id,
+  })
+
   revalidatePath(`/transactions/${id}`)
   revalidatePath('/transactions')
   return { data }
@@ -336,6 +349,18 @@ export async function confirmAndRelease(id: string) {
   if (error) return { error: error.message }
 
   await insertSystemMessage(id, 'Buyer has confirmed delivery. Funds have been released to the seller. Transaction complete!', 'milestone', { event: 'funds_released' })
+
+  // Notify seller
+  await notifyTransactionStatusChange({
+    transactionId: id,
+    buyerId: txn.buyer_id,
+    sellerId: txn.seller_id,
+    newStatus: 'released',
+    description: txn.description,
+    amount: Number(txn.amount),
+    currency: txn.currency,
+    actorId: user.id,
+  })
 
   // Credit seller's wallet with the escrow amount
   await creditWallet(txn.seller_id, Number(txn.amount), id)
@@ -382,6 +407,18 @@ export async function cancelTransaction(id: string, reason?: string) {
 
   await insertSystemMessage(id, `Transaction cancelled${reason ? `: ${reason}` : '.'} `, 'system', { event: 'cancelled' })
 
+  // Notify the other party
+  await notifyTransactionStatusChange({
+    transactionId: id,
+    buyerId: txn.buyer_id,
+    sellerId: txn.seller_id,
+    newStatus: 'cancelled',
+    description: txn.description,
+    amount: Number(txn.amount),
+    currency: txn.currency,
+    actorId: user.id,
+  })
+
   revalidatePath(`/transactions/${id}`)
   revalidatePath('/transactions')
   return { data }
@@ -422,6 +459,18 @@ export async function openDispute(id: string, reason: string) {
 
   const role = txn.buyer_id === user.id ? 'Buyer' : 'Seller'
   await insertSystemMessage(id, `${role} has opened a dispute: "${reason}". An admin will review this case.`, 'system', { event: 'dispute_opened', reason, opened_by: user.id })
+
+  // Notify other party about the dispute
+  await notifyTransactionStatusChange({
+    transactionId: id,
+    buyerId: txn.buyer_id,
+    sellerId: txn.seller_id,
+    newStatus: 'dispute',
+    description: txn.description,
+    amount: Number(txn.amount),
+    currency: txn.currency,
+    actorId: user.id,
+  })
 
   revalidatePath(`/transactions/${id}`)
   revalidatePath('/transactions')

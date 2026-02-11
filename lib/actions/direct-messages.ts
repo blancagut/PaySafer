@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { notifyMessageReceived, notifyUser } from './notifications'
 
 // ─── Types ───
 
@@ -179,6 +180,52 @@ export async function sendDirectMessage(conversationId: string, message: string)
     .update({ last_message_at: new Date().toISOString() })
     .eq('id', conversationId)
 
+  // Notify recipient (debounced: max 1 notification per conversation per 60s)
+  try {
+    const { data: conversation } = await admin
+      .from('conversations')
+      .select('participant_1, participant_2')
+      .eq('id', conversationId)
+      .single()
+
+    if (conversation) {
+      const recipientId = conversation.participant_1 === user.id
+        ? conversation.participant_2
+        : conversation.participant_1
+
+      // Check last notification for this conversation (60s debounce)
+      const { data: recentNotif } = await admin
+        .from('notifications')
+        .select('id')
+        .eq('user_id', recipientId)
+        .eq('type', 'message.received')
+        .eq('reference_id', conversationId)
+        .gte('created_at', new Date(Date.now() - 60000).toISOString())
+        .limit(1)
+
+      if (!recentNotif || recentNotif.length === 0) {
+        const { data: senderProfile } = await admin
+          .from('profiles')
+          .select('full_name, username')
+          .eq('id', user.id)
+          .single()
+
+        const senderName = senderProfile?.username
+          ? `$${senderProfile.username}`
+          : senderProfile?.full_name || 'Someone'
+
+        await notifyMessageReceived({
+          recipientId,
+          senderName,
+          conversationId,
+          preview: message.trim(),
+        })
+      }
+    }
+  } catch {
+    // Never block messaging
+  }
+
   // Fire-and-forget: Scam detection every 5 messages
   try {
     const { count } = await supabase
@@ -287,13 +334,13 @@ export async function sendMoneyInChat(input: {
     ? `$${senderProfile.username}`
     : senderProfile?.full_name || 'Someone'
 
-  await admin.from('notifications').insert({
-    user_id: input.recipientId,
+  await notifyUser({
+    userId: input.recipientId,
     type: 'p2p_received',
     title: 'Money Received!',
     message: `${senderName} sent you ${input.currency || 'EUR'} ${input.amount.toFixed(2)} in chat`,
-    reference_type: 'transfer',
-    reference_id: result.transfer_id as string,
+    referenceType: 'transfer',
+    referenceId: result.transfer_id as string,
   })
 
   // Auto-add contacts
@@ -377,13 +424,13 @@ export async function requestMoneyInChat(input: {
     ? `$${senderProfile.username}`
     : senderProfile?.full_name || 'Someone'
 
-  await admin.from('notifications').insert({
-    user_id: input.payerId,
-    type: 'payment_request',
+  await notifyUser({
+    userId: input.payerId,
+    type: 'p2p_request',
     title: 'Payment Request',
     message: `${senderName} requested ${input.currency || 'EUR'} ${input.amount.toFixed(2)}${input.note ? ` — "${input.note}"` : ''}`,
-    reference_type: 'payment_request',
-    reference_id: request.id,
+    referenceType: 'payment_request',
+    referenceId: request.id,
   })
 
   revalidatePath('/messages')

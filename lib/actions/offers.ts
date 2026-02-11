@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import crypto from 'crypto'
+import { notifyOfferAccepted } from './notifications'
 
 // ============================================================================
 // TYPES
@@ -303,6 +304,17 @@ export async function acceptOffer(token: string) {
     await admin.from('transactions').delete().eq('id', transaction.id)
     return { error: 'This offer has already been accepted by someone else' }
   }
+
+  // Notify offer creator that their offer was accepted
+  await notifyOfferAccepted({
+    offerId: offer.id,
+    creatorId: offer.creator_id,
+    acceptedById: user.id,
+    title: offer.title,
+    amount: Number(offer.amount),
+    currency: offer.currency,
+    transactionId: transaction.id,
+  })
 
   revalidatePath('/dashboard')
   revalidatePath('/transactions')

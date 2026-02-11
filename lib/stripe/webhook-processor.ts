@@ -9,6 +9,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { insertSystemMessage } from '@/lib/actions/transaction-messages'
 import { processWalletTopUp } from '@/lib/actions/wallet'
+import { notifyTransactionStatusChange, notifyWalletTopUp } from '@/lib/actions/notifications'
 
 interface StripeEvent {
   id: string
@@ -107,6 +108,26 @@ async function handleCheckoutCompleted(session: Record<string, unknown>) {
     }
   )
 
+  // Notify buyer + seller about escrow
+  const { data: txnFull } = await admin
+    .from('transactions')
+    .select('buyer_id, seller_id, description, amount, currency')
+    .eq('id', transactionId)
+    .single()
+
+  if (txnFull) {
+    await notifyTransactionStatusChange({
+      transactionId,
+      buyerId: txnFull.buyer_id,
+      sellerId: txnFull.seller_id,
+      newStatus: 'in_escrow',
+      description: txnFull.description,
+      amount: Number(txnFull.amount),
+      currency: txnFull.currency,
+      actorId: '', // system action — notify both parties
+    })
+  }
+
   console.log('[webhook] Transaction moved to in_escrow:', transactionId)
 }
 
@@ -151,6 +172,9 @@ async function handleWalletTopUp(
     console.error('[webhook] Wallet top-up failed:', result.error)
     return
   }
+
+  // Notify user about successful top-up
+  await notifyWalletTopUp({ userId, amount, currency })
 
   console.log('[webhook] Wallet top-up completed for user:', userId, 'amount:', amount)
 }

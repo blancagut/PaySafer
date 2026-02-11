@@ -13,27 +13,19 @@ import {
   HelpCircle,
   LogOut,
   ChevronDown,
-  Bell,
-  Sparkles,
   Shield,
-  PanelLeftClose,
-  PanelLeftOpen,
   Search,
   BarChart3,
   Wallet,
   FileText,
   Menu,
-  X,
-  Check,
   ChevronRight,
   Command,
   Banknote,
   MessageCircle,
-  Send,
+  Sparkles,
 } from "lucide-react"
-import { Logo } from "@/components/logo"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,98 +34,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { Sheet, SheetContent } from "@/components/ui/sheet"
 import { createClient } from "@/lib/supabase/client"
 import { useNotificationSubscription } from "@/lib/supabase/realtime"
 import { toast } from "sonner"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { LanguageSelector } from "@/components/language-selector"
-
-// ─── Navigation Config ───
-const navigation = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Create Offer", href: "/transactions/new", icon: Plus },
-  { name: "Services", href: "/services", icon: Sparkles, badge: "NEW" },
-  { name: "Transactions", href: "/transactions", icon: History },
-  { name: "Offers", href: "/offers", icon: FileText },
-  { name: "Disputes", href: "/disputes", icon: AlertTriangle },
-  { name: "Analytics", href: "/analytics", icon: BarChart3 },
-  { name: "Wallet", href: "/wallet", icon: Wallet },
-  { name: "Send Money", href: "/wallet/send", icon: Send },
-  { name: "Messages", href: "/messages", icon: MessageCircle },
-  { name: "Payouts", href: "/payouts", icon: Banknote },
-]
-
-const adminNavigation = [
-  { name: "Admin Panel", href: "/admin", icon: Shield },
-  { name: "Chats", href: "/admin/chats", icon: MessageCircle },
-]
-
-const accountNavigation = [
-  { name: "Profile", href: "/profile", icon: User },
-  { name: "Settings", href: "/settings", icon: Settings },
-  { name: "Help", href: "/help", icon: HelpCircle },
-]
-
-// ─── Sidebar Nav Link ───
-function NavLink({
-  item,
-  isActive,
-  collapsed,
-}: {
-  item: { name: string; href: string; icon: React.ComponentType<{ className?: string }>; badge?: string }
-  isActive: boolean
-  collapsed: boolean
-}) {
-  return (
-    <Link
-      href={item.href}
-      className={cn(
-        "group flex items-center gap-3 rounded-lg text-sm font-medium transition-all duration-200",
-        collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2.5",
-        isActive
-          ? "bg-primary/10 text-primary border border-primary/20"
-          : "text-muted-foreground hover:bg-white/[0.06] hover:text-foreground border border-transparent"
-      )}
-      title={collapsed ? item.name : undefined}
-    >
-      <item.icon className={cn("w-5 h-5 shrink-0", isActive && "text-primary")} />
-      {!collapsed && (
-        <>
-          <span className="truncate">{item.name}</span>
-          {item.badge && (
-            <span className="ml-auto text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-semibold">
-              {item.badge}
-            </span>
-          )}
-        </>
-      )}
-    </Link>
-  )
-}
-
-// ─── Notification Bell ───
-function NotificationBell({
-  count,
-  onClick,
-}: {
-  count: number
-  onClick: () => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="relative p-2 rounded-lg text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition-colors"
-    >
-      <Bell className="w-5 h-5" />
-      {count > 0 && (
-        <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 rounded-full text-[10px] font-bold text-white flex items-center justify-center px-1 animate-scale-in">
-          {count > 99 ? "99+" : count}
-        </span>
-      )}
-    </button>
-  )
-}
+import { NotificationDropdown } from "@/components/notifications/notification-dropdown"
+import { PushPermissionPrompt } from "@/components/notifications/push-permission-prompt"
+import { playNotificationSound } from "@/lib/notifications/sound"
+import { DashboardSidebar, allNavRoutes } from "@/components/dashboard-sidebar"
 
 // ─── Main Layout ───
 export default function DashboardLayout({
@@ -151,7 +61,9 @@ export default function DashboardLayout({
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [notifCount, setNotifCount] = useState(0)
+  const [latestNotif, setLatestNotif] = useState<Record<string, unknown> | null>(null)
   const [cmdOpen, setCmdOpen] = useState(false)
+  const [notifSoundEnabled, setNotifSoundEnabled] = useState(true)
 
   // Persist sidebar state
   useEffect(() => {
@@ -184,6 +96,20 @@ export default function DashboardLayout({
           .eq("user_id", user.id).eq("read", false)
           .then(({ count }) => setNotifCount(count ?? 0))
           .catch(() => {}) // Silently handle notification fetch errors
+
+        // Load notification sound preference
+        supabase
+          .from("user_settings").select("notify_sound")
+          .eq("id", user.id).single()
+          .then(({ data }) => {
+            if (data) setNotifSoundEnabled(data.notify_sound !== false)
+          })
+          .catch(() => {})
+
+        // Register service worker for push notifications
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker.register("/sw.js").catch(() => {})
+        }
       }
     }).catch(() => {}) // Silently handle auth errors
 
@@ -203,9 +129,19 @@ export default function DashboardLayout({
   }, [])
 
   // Real-time notifications
-  useNotificationSubscription(user?.id, () => {
+  useNotificationSubscription(user?.id, (notification) => {
     setNotifCount((prev) => prev + 1)
-    toast.info("New notification", { description: "You have a new update" })
+    setLatestNotif(notification)
+
+    // Rich toast with notification details
+    const title = (notification as Record<string, unknown>).title as string || "New notification"
+    const message = (notification as Record<string, unknown>).message as string || "You have a new update"
+    toast.info(title, { description: message })
+
+    // Play sound if enabled
+    if (notifSoundEnabled) {
+      playNotificationSound()
+    }
   })
 
   // Keyboard shortcut for command palette
@@ -240,126 +176,11 @@ export default function DashboardLayout({
 
   // Find current page title
   const pageTitle = useMemo(() => {
-    const allRoutes = [...navigation, ...adminNavigation, ...accountNavigation]
     return (
-      allRoutes.find((item) => pathname === item.href || pathname.startsWith(item.href + "/"))?.name ||
+      allNavRoutes.find((item) => pathname === item.href || pathname.startsWith(item.href + "/"))?.name ||
       "Dashboard"
     )
   }, [pathname])
-
-  // ─── Sidebar Content (shared between desktop and mobile) ───
-  const sidebarContent = (mobile = false) => {
-    const isCollapsed = mobile ? false : collapsed
-    return (
-      <>
-        {/* Logo */}
-        <div
-          className={cn(
-            "h-16 flex items-center border-b border-white/[0.06] shrink-0",
-            isCollapsed ? "justify-center px-3" : "px-5"
-          )}
-        >
-          {isCollapsed ? (
-            <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
-              <span className="text-primary font-bold text-sm">P</span>
-            </div>
-          ) : (
-            <Logo size="sm" linkTo="/dashboard" />
-          )}
-        </div>
-
-        {/* Nav */}
-        <nav className={cn("flex-1 py-4 space-y-1 overflow-y-auto", isCollapsed ? "px-2" : "px-3")}>
-          {/* Main nav */}
-          {navigation.map((item) => (
-            <NavLink
-              key={item.href}
-              item={item}
-              isActive={pathname === item.href || pathname.startsWith(item.href + "/")}
-              collapsed={isCollapsed}
-            />
-          ))}
-
-          {/* Admin */}
-          {profile?.role === "admin" && (
-            <>
-              <div className={cn("pt-5 pb-1", isCollapsed ? "px-0" : "px-1")}>
-                {!isCollapsed && (
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
-                    Admin
-                  </span>
-                )}
-                {isCollapsed && <div className="w-full h-px bg-white/[0.06]" />}
-              </div>
-              {adminNavigation.map((item) => (
-                <NavLink
-                  key={item.href}
-                  item={item}
-                  isActive={pathname === item.href}
-                  collapsed={isCollapsed}
-                />
-              ))}
-            </>
-          )}
-
-          {/* Account */}
-          <div className={cn("pt-5 pb-1", isCollapsed ? "px-0" : "px-1")}>
-            {!isCollapsed && (
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
-                Account
-              </span>
-            )}
-            {isCollapsed && <div className="w-full h-px bg-white/[0.06]" />}
-          </div>
-          {accountNavigation.map((item) => (
-            <NavLink
-              key={item.href}
-              item={item}
-              isActive={pathname === item.href}
-              collapsed={isCollapsed}
-            />
-          ))}
-        </nav>
-
-        {/* Bottom: Trust card + collapse toggle */}
-        <div className="shrink-0 border-t border-white/[0.06]">
-          {!isCollapsed && (
-            <div className="p-3">
-              <Link
-                href="/trust"
-                className="block p-3 rounded-lg bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-primary" />
-                  <p className="text-xs font-semibold text-foreground">Powered by Stripe</p>
-                </div>
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  Learn how we protect your money
-                </p>
-              </Link>
-            </div>
-          )}
-          {!mobile && (
-            <div className="p-2">
-              <button
-                onClick={toggleSidebar}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition-colors"
-              >
-                {isCollapsed ? (
-                  <PanelLeftOpen className="w-4 h-4" />
-                ) : (
-                  <>
-                    <PanelLeftClose className="w-4 h-4" />
-                    <span>Collapse</span>
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-        </div>
-      </>
-    )
-  }
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -370,13 +191,24 @@ export default function DashboardLayout({
           collapsed ? "w-[68px]" : "w-[260px]"
         )}
       >
-        {sidebarContent(false)}
+        <DashboardSidebar
+          profile={profile}
+          collapsed={collapsed}
+          onToggleCollapse={toggleSidebar}
+        />
       </aside>
 
       {/* ─── Mobile Sidebar Sheet ─── */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="w-[280px] p-0 bg-[hsl(222,47%,5%)] border-r border-white/[0.06] glass-sidebar">
-          <div className="flex flex-col h-full">{sidebarContent(true)}</div>
+          <div className="flex flex-col h-full">
+            <DashboardSidebar
+              profile={profile}
+              collapsed={false}
+              onToggleCollapse={toggleSidebar}
+              mobile
+            />
+          </div>
         </SheetContent>
       </Sheet>
 
@@ -415,11 +247,10 @@ export default function DashboardLayout({
             <LanguageSelector />
 
             {/* Notifications */}
-            <NotificationBell
+            <NotificationDropdown
               count={notifCount}
-              onClick={() => {
-                router.push("/notifications")
-              }}
+              onCountChange={setNotifCount}
+              newNotification={latestNotif}
             />
 
             {/* User menu */}
@@ -480,6 +311,7 @@ export default function DashboardLayout({
 
         {/* ─── Page Content ─── */}
         <main className="flex-1 p-4 md:p-6 overflow-auto">
+          <PushPermissionPrompt />
           {children}
         </main>
 
@@ -487,9 +319,9 @@ export default function DashboardLayout({
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 glass-topbar flex items-center justify-around py-2 px-1 safe-area-bottom">
           {[
             { name: "Home", href: "/dashboard", icon: LayoutDashboard },
-            { name: "Transactions", href: "/transactions", icon: History },
+            { name: "Wallet", href: "/wallet", icon: Wallet },
             { name: "Create", href: "/transactions/new", icon: Plus, primary: true },
-            { name: "Disputes", href: "/disputes", icon: AlertTriangle },
+            { name: "Transactions", href: "/transactions", icon: History },
             { name: "More", href: "#", icon: Menu, action: () => setMobileOpen(true) },
           ].map((item) => {
             const isActive = item.href !== "#" && (pathname === item.href || pathname.startsWith(item.href + "/"))
@@ -552,19 +384,20 @@ function CommandPalette({
   const [query, setQuery] = useState("")
 
   const allItems = [
-    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, group: "Pages" },
+    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, group: "Home" },
     { name: "Create Offer", href: "/transactions/new", icon: Plus, group: "Actions" },
-    { name: "View Transactions", href: "/transactions", icon: History, group: "Pages" },
-    { name: "View Disputes", href: "/disputes", icon: AlertTriangle, group: "Pages" },
-    { name: "Manage Offers", href: "/offers", icon: FileText, group: "Pages" },
-    { name: "Analytics", href: "/analytics", icon: BarChart3, group: "Pages" },
-    { name: "Wallet", href: "/wallet", icon: Wallet, group: "Pages" },
-    { name: "Payouts", href: "/payouts", icon: Banknote, group: "Pages" },
-    { name: "Services", href: "/services", icon: Sparkles, group: "Pages" },
+    { name: "Transactions", href: "/transactions", icon: History, group: "Money" },
+    { name: "Offers", href: "/offers", icon: FileText, group: "Money" },
+    { name: "Wallet", href: "/wallet", icon: Wallet, group: "Money" },
+    { name: "Payouts", href: "/payouts", icon: Banknote, group: "Money" },
+    { name: "Services", href: "/services", icon: Sparkles, group: "Services" },
+    { name: "Disputes", href: "/disputes", icon: AlertTriangle, group: "Services" },
+    { name: "Analytics", href: "/analytics", icon: BarChart3, group: "Services" },
+    { name: "Messages", href: "/messages", icon: MessageCircle, group: "Account" },
     { name: "Profile", href: "/profile", icon: User, group: "Account" },
     { name: "Settings", href: "/settings", icon: Settings, group: "Account" },
     { name: "Help Center", href: "/help", icon: HelpCircle, group: "Account" },
-    { name: "Trust & Security", href: "/trust", icon: Shield, group: "Pages" },
+    { name: "Trust & Security", href: "/trust", icon: Shield, group: "Account" },
   ]
 
   const filtered = query

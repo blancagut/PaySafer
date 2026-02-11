@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { notifyTransactionMessage } from './notifications'
 
 export interface TransactionMessage {
   id: string
@@ -85,6 +86,39 @@ export async function sendTransactionMessage(
 
   if (error) {
     return { error: error.message }
+  }
+
+  // Fire-and-forget: Notify the other party
+  try {
+    const { data: txnData } = await supabase
+      .from('transactions')
+      .select('buyer_id, seller_id, description')
+      .eq('id', transactionId)
+      .single()
+
+    if (txnData) {
+      const recipientId = txnData.buyer_id === user.id ? txnData.seller_id : txnData.buyer_id
+      if (recipientId) {
+        const { data: senderProfile } = await supabase
+          .from('profiles')
+          .select('full_name, username')
+          .eq('id', user.id)
+          .single()
+
+        const senderName = senderProfile?.username
+          ? `$${senderProfile.username}`
+          : senderProfile?.full_name || 'Someone'
+
+        await notifyTransactionMessage({
+          recipientId,
+          senderName,
+          transactionId,
+          transactionDesc: txnData.description || 'your transaction',
+        })
+      }
+    }
+  } catch {
+    // Never block messaging
   }
 
   // Fire-and-forget: Run scam detection every 5 messages

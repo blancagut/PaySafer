@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { notifyUser } from './notifications'
 
 // ─── Types ───
 
@@ -136,13 +137,13 @@ export async function sendMoney(input: {
     ? `$${senderProfile.username}`
     : senderProfile?.full_name || 'Someone'
 
-  await admin.from('notifications').insert({
-    user_id: recipient.id,
+  await notifyUser({
+    userId: recipient.id,
     type: 'p2p_received',
     title: 'Money Received!',
     message: `${senderName} sent you ${input.currency || 'EUR'} ${input.amount.toFixed(2)}${input.note ? ` — "${input.note}"` : ''}`,
-    reference_type: 'transfer',
-    reference_id: result.transfer_id as string,
+    referenceType: 'transfer',
+    referenceId: result.transfer_id as string,
   })
 
   // Auto-add to contacts (both ways, idempotent)
@@ -209,13 +210,13 @@ export async function requestMoney(input: {
     ? `$${requesterProfile.username}`
     : requesterProfile?.full_name || 'Someone'
 
-  await admin.from('notifications').insert({
-    user_id: payer.id,
+  await notifyUser({
+    userId: payer.id,
     type: 'p2p_request',
     title: 'Payment Request',
     message: `${requesterName} is requesting ${input.currency || 'EUR'} ${input.amount.toFixed(2)}${input.note ? ` for "${input.note}"` : ''}`,
-    reference_type: 'request',
-    reference_id: data.id,
+    referenceType: 'request',
+    referenceId: data.id,
   })
 
   revalidatePath('/wallet')
@@ -284,13 +285,13 @@ export async function acceptPaymentRequest(requestId: string) {
     ? `$${payerProfile.username}`
     : payerProfile?.full_name || 'Someone'
 
-  await admin.from('notifications').insert({
-    user_id: req.requester_id,
+  await notifyUser({
+    userId: req.requester_id,
     type: 'p2p_request_accepted',
     title: 'Payment Request Accepted',
     message: `${payerName} paid your request of ${req.currency} ${Number(req.amount).toFixed(2)}`,
-    reference_type: 'transfer',
-    reference_id: result.transfer_id as string,
+    referenceType: 'transfer',
+    referenceId: result.transfer_id as string,
   })
 
   revalidatePath('/wallet')
@@ -323,13 +324,13 @@ export async function declinePaymentRequest(requestId: string) {
     .eq('id', requestId)
 
   // Notify requester
-  await admin.from('notifications').insert({
-    user_id: req.requester_id,
+  await notifyUser({
+    userId: req.requester_id,
     type: 'p2p_request_declined',
     title: 'Payment Request Declined',
     message: `Your request for ${req.currency} ${Number(req.amount).toFixed(2)} was declined.`,
-    reference_type: 'request',
-    reference_id: requestId,
+    referenceType: 'request',
+    referenceId: requestId,
   })
 
   revalidatePath('/wallet')
@@ -360,6 +361,16 @@ export async function cancelPaymentRequest(requestId: string) {
     .from('payment_requests')
     .update({ status: 'cancelled' })
     .eq('id', requestId)
+
+  // Notify the payer that the request was cancelled
+  await notifyUser({
+    userId: req.payer_id,
+    type: 'p2p_request_cancelled',
+    title: 'Payment Request Cancelled',
+    message: `A payment request for ${req.currency} ${Number(req.amount).toFixed(2)} was cancelled by the requester.`,
+    referenceType: 'request',
+    referenceId: requestId,
+  })
 
   revalidatePath('/wallet')
   return { data: { status: 'cancelled' } }
