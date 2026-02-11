@@ -2,52 +2,58 @@
 
 /**
  * Notification sound utility.
- * Uses Web Audio API to synthesize a pleasant two-tone chime.
- * No external audio file needed.
+ * Plays custom MP3 sounds based on notification type.
+ *
+ * Sound files in public/sounds/:
+ *   money.mp3    → payments, transfers, requests, wallet
+ *   message.mp3  → chat messages
+ *   offer.mp3    → offers
+ *   dispute.mp3  → disputes
+ *   alert.mp3    → scam flags, admin, system
  */
 
-let audioCtx: AudioContext | null = null
+type SoundCategory = 'money' | 'message' | 'offer' | 'dispute' | 'alert'
 
 /**
- * Play a synthesized two-tone notification chime.
+ * Map notification type prefix → sound file.
+ */
+function getSoundForType(type?: string): SoundCategory {
+  if (!type) return 'alert'
+
+  if (
+    type.startsWith('transaction.') ||
+    type.startsWith('p2p_') ||
+    type.startsWith('wallet.')
+  ) return 'money'
+
+  if (type.startsWith('message.')) return 'message'
+  if (type.startsWith('offer.'))   return 'offer'
+  if (type.startsWith('dispute.')) return 'dispute'
+
+  // scam.*, admin.*, system, unknown
+  return 'alert'
+}
+
+// Cache Audio elements per sound category to avoid re-creating them
+const audioCache: Partial<Record<SoundCategory, HTMLAudioElement>> = {}
+
+/**
+ * Play the appropriate notification sound for the given notification type.
  * Handles browser autoplay restrictions gracefully.
  */
-export function playNotificationSound() {
+export function playNotificationSound(notificationType?: string) {
   try {
-    if (!audioCtx) {
-      audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const category = getSoundForType(notificationType)
+
+    if (!audioCache[category]) {
+      audioCache[category] = new Audio(`/sounds/${category}.mp3`)
+      audioCache[category]!.volume = 0.5
     }
 
-    // Resume context if suspended (autoplay policy)
-    if (audioCtx.state === "suspended") {
-      audioCtx.resume().catch(() => {})
-    }
-
-    const now = audioCtx.currentTime
-
-    // Two-tone chime: C6 (1047 Hz) then E6 (1319 Hz)
-    const frequencies = [1047, 1319]
-    const duration = 0.12
-    const gap = 0.08
-
-    frequencies.forEach((freq, i) => {
-      const oscillator = audioCtx!.createOscillator()
-      const gainNode = audioCtx!.createGain()
-
-      oscillator.type = "sine"
-      oscillator.frequency.setValueAtTime(freq, now)
-
-      // Quick fade in/out for a clean chime
-      const start = now + i * (duration + gap)
-      gainNode.gain.setValueAtTime(0, start)
-      gainNode.gain.linearRampToValueAtTime(0.3, start + 0.01)
-      gainNode.gain.linearRampToValueAtTime(0, start + duration)
-
-      oscillator.connect(gainNode)
-      gainNode.connect(audioCtx!.destination)
-
-      oscillator.start(start)
-      oscillator.stop(start + duration)
+    const audio = audioCache[category]!
+    audio.currentTime = 0
+    audio.play().catch(() => {
+      // Browser blocked autoplay — silently ignore.
     })
   } catch {
     // Audio not supported — ignore

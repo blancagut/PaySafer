@@ -12,6 +12,7 @@ export interface UserSettings {
   notify_transactions: boolean
   notify_disputes: boolean
   notify_offers: boolean
+  notify_messages: boolean
   notify_marketing: boolean
   notify_realtime: boolean
   notify_sound: boolean
@@ -42,6 +43,7 @@ const DEFAULTS: Omit<UserSettings, 'id' | 'created_at' | 'updated_at'> = {
   notify_transactions: true,
   notify_disputes: true,
   notify_offers: true,
+  notify_messages: true,
   notify_marketing: false,
   notify_realtime: true,
   notify_sound: true,

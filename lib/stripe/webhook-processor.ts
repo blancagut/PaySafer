@@ -10,6 +10,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { insertSystemMessage } from '@/lib/actions/transaction-messages'
 import { processWalletTopUp } from '@/lib/actions/wallet'
 import { notifyTransactionStatusChange, notifyWalletTopUp } from '@/lib/actions/notifications'
+import { saveCardFromSetupIntent } from '@/lib/actions/cards'
 
 interface StripeEvent {
   id: string
@@ -29,6 +30,9 @@ export async function processStripeEvent(event: StripeEvent): Promise<void> {
       break
     case 'checkout.session.expired':
       await handleCheckoutExpired(event.data.object)
+      break
+    case 'setup_intent.succeeded':
+      await handleSetupIntentSucceeded(event.data.object)
       break
     default:
       // Ignore unhandled event types
@@ -177,4 +181,45 @@ async function handleWalletTopUp(
   await notifyWalletTopUp({ userId, amount, currency })
 
   console.log('[webhook] Wallet top-up completed for user:', userId, 'amount:', amount)
+}
+
+/**
+ * setup_intent.succeeded
+ * Save the card details to the database after a successful SetupIntent.
+ */
+async function handleSetupIntentSucceeded(setupIntent: Record<string, unknown>) {
+  const paymentMethodId = setupIntent.payment_method as string | undefined
+  const customerId = setupIntent.customer as string | undefined
+
+  if (!paymentMethodId) {
+    console.error('[webhook] setup_intent.succeeded missing payment_method')
+    return
+  }
+
+  if (!customerId) {
+    console.error('[webhook] setup_intent.succeeded missing customer')
+    return
+  }
+
+  // Look up the user by stripe_customer_id
+  const admin = createAdminClient()
+  const { data: profile, error: profileError } = await admin
+    .from('profiles')
+    .select('id')
+    .eq('stripe_customer_id', customerId)
+    .single()
+
+  if (profileError || !profile) {
+    console.error('[webhook] No profile found for Stripe customer:', customerId)
+    return
+  }
+
+  const result = await saveCardFromSetupIntent(profile.id, paymentMethodId)
+
+  if (result.error) {
+    console.error('[webhook] Failed to save card:', result.error)
+    return
+  }
+
+  console.log('[webhook] Card saved for user:', profile.id, 'pm:', paymentMethodId)
 }

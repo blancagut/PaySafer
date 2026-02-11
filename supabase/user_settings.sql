@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS public.user_settings (
   notify_disputes BOOLEAN NOT NULL DEFAULT TRUE,
   notify_offers BOOLEAN NOT NULL DEFAULT TRUE,
   notify_marketing BOOLEAN NOT NULL DEFAULT FALSE,
+  notify_messages BOOLEAN NOT NULL DEFAULT TRUE,
   notify_realtime BOOLEAN NOT NULL DEFAULT TRUE,
   notify_sound BOOLEAN NOT NULL DEFAULT TRUE,
   notify_weekly_digest BOOLEAN NOT NULL DEFAULT FALSE,

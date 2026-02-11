@@ -30,6 +30,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { GlassCard, GlassStat, GlassContainer } from "@/components/glass"
 import { GlassBadge, statusBadgeMap, offerStatusBadgeMap } from "@/components/glass"
+import { CardCarousel } from "@/components/card-carousel"
 import { getTransactionStats, getUserTransactions } from "@/lib/actions/transactions"
 import { getOfferStats, getMyOffers } from "@/lib/actions/offers"
 import { getProfile } from "@/lib/actions/profile"
@@ -216,6 +217,9 @@ export default function DashboardPage() {
           </Button>
         </div>
       </div>
+
+      {/* ─── My Cards Carousel ─── */}
+      <CardCarousel className="animate-fade-in-up" />
 
       {/* ─── KPI Stats Row ─── */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">

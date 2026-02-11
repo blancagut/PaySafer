@@ -38,6 +38,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { getWallet, getWalletHistory, createTopUpSession, getMyProfile, claimUsername } from "@/lib/actions/wallet"
 import { getRecentRecipients } from "@/lib/actions/contacts"
+import { CardCarousel } from "@/components/card-carousel"
 import { getPaymentRequests, type PaymentRequest, acceptPaymentRequest, declinePaymentRequest } from "@/lib/actions/transfers"
 import { getUserTransactions } from "@/lib/actions/transactions"
 import { toast } from "sonner"
@@ -430,6 +431,9 @@ export default function WalletPage() {
         </div>
         <div className="h-1 bg-gradient-to-r from-emerald-500/40 via-primary/20 to-emerald-500/0" />
       </GlassCard>
+
+      {/* ─── My Cards Carousel ─── */}
+      <CardCarousel className="animate-fade-in-up" />
 
       {/* ─── Quick Send (Recent Recipients) ─── */}
       {recentRecipients.length > 0 && (

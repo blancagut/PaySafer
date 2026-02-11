@@ -138,9 +138,9 @@ export default function DashboardLayout({
     const message = (notification as Record<string, unknown>).message as string || "You have a new update"
     toast.info(title, { description: message })
 
-    // Play sound if enabled
+    // Play sound if enabled — pass type so the right MP3 plays
     if (notifSoundEnabled) {
-      playNotificationSound()
+      playNotificationSound((notification as Record<string, unknown>).type as string)
     }
   })
 

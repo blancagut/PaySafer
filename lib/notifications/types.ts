@@ -55,7 +55,7 @@ export interface NotificationConfig {
   /** Whether this type should trigger a browser push notification */
   sendPush: boolean
   /** User preference key that controls this notification type */
-  preferenceKey: 'notify_transactions' | 'notify_disputes' | 'notify_offers' | 'notify_realtime' | null
+  preferenceKey: 'notify_transactions' | 'notify_disputes' | 'notify_offers' | 'notify_messages' | 'notify_realtime' | null
   /** Icon name from lucide-react */
   icon: string
   /** Color class for the notification badge */
@@ -232,7 +232,7 @@ export const NOTIFICATION_CONFIG: Record<NotificationType, NotificationConfig> =
     priority: 'normal',
     sendEmail: false,
     sendPush: true,
-    preferenceKey: 'notify_realtime',
+    preferenceKey: 'notify_messages',
     icon: 'MessageCircle',
     color: 'text-blue-500',
   },
@@ -240,7 +240,7 @@ export const NOTIFICATION_CONFIG: Record<NotificationType, NotificationConfig> =
     priority: 'normal',
     sendEmail: false,
     sendPush: true,
-    preferenceKey: 'notify_realtime',
+    preferenceKey: 'notify_messages',
     icon: 'MessageSquare',
     color: 'text-blue-400',
   },

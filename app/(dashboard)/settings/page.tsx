@@ -8,6 +8,8 @@ import {
   Lock,
   Globe,
   Bell,
+  BellRing,
+  BellOff,
   Loader2,
   Palette,
   Monitor,
@@ -28,6 +30,12 @@ import {
   Zap,
   Hash,
   Link2,
+  MessageCircle,
+  Volume2,
+  VolumeX,
+  Mail,
+  MailX,
+  Megaphone,
 } from "lucide-react"
 import { GlassCard, GlassContainer } from "@/components/glass"
 import { GlassInput } from "@/components/glass"
@@ -352,38 +360,144 @@ export default function SettingsPage() {
 
           {/* ═══ NOTIFICATIONS ═══ */}
           {activeSection === "notifications" && (
-            <GlassContainer header={{ title: "Notifications", description: "Choose what notifications you receive" }} className="animate-fade-in">
-              <div className="space-y-1">
-                {([
-                  { key: "notify_email" as const, title: "Email Notifications", desc: "Receive notifications via email", icon: <Bell className="w-4 h-4" /> },
-                  { key: "notify_transactions" as const, title: "Transaction Updates", desc: "Status changes and payment confirmations", icon: <CreditCard className="w-4 h-4" /> },
-                  { key: "notify_disputes" as const, title: "Dispute Alerts", desc: "Important dispute updates and resolution", icon: <AlertTriangle className="w-4 h-4" /> },
-                  { key: "notify_offers" as const, title: "Offer Activity", desc: "When someone accepts or views your offers", icon: <Link2 className="w-4 h-4" /> },
-                  { key: "notify_realtime" as const, title: "Real-time Push", desc: "In-app instant notifications", icon: <Zap className="w-4 h-4" /> },
-                  { key: "notify_sound" as const, title: "Notification Sound", desc: "Play a sound for new notifications", icon: <Activity className="w-4 h-4" /> },
-                  { key: "notify_weekly_digest" as const, title: "Weekly Digest", desc: "Summary of your activity every Monday", icon: <FileText className="w-4 h-4" /> },
-                  { key: "notify_marketing" as const, title: "Marketing Emails", desc: "News, tips, and product updates", icon: <Globe className="w-4 h-4" /> },
-                ] as const).map((item) => (
-                  <div key={item.key} className="flex items-center justify-between py-3.5 px-3 rounded-lg hover:bg-white/[0.03] transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center text-muted-foreground">{item.icon}</div>
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{item.title}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+            <div className="space-y-6 animate-fade-in">
+              {/* ── Delivery Channels ── */}
+              <GlassContainer header={{ title: "Delivery Channels", description: "How you receive notifications" }}>
+                <div className="space-y-1">
+                  {([
+                    {
+                      key: "notify_realtime" as const,
+                      title: "In-App Notifications",
+                      desc: "Real-time alerts inside the dashboard",
+                      icon: <BellRing className="w-4 h-4" />,
+                      color: "bg-primary/10 text-primary",
+                    },
+                    {
+                      key: "notify_sound" as const,
+                      title: "Notification Sounds",
+                      desc: "Play a sound when new notifications arrive",
+                      icon: settings?.notify_sound ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />,
+                      color: "bg-violet-500/10 text-violet-500",
+                    },
+                    {
+                      key: "notify_email" as const,
+                      title: "Email Notifications",
+                      desc: "Receive alerts for critical events via email",
+                      icon: settings?.notify_email ? <Mail className="w-4 h-4" /> : <MailX className="w-4 h-4" />,
+                      color: "bg-blue-500/10 text-blue-500",
+                    },
+                  ] as const).map((item) => (
+                    <div key={item.key} className="flex items-center justify-between py-3.5 px-3 rounded-lg hover:bg-white/[0.03] transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${item.color}`}>{item.icon}</div>
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{item.title}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                        </div>
                       </div>
+                      <Switch
+                        checked={settings?.[item.key] ?? false}
+                        onCheckedChange={(checked) => persistSettings({ [item.key]: checked })}
+                      />
                     </div>
-                    <Switch
-                      checked={settings?.[item.key] ?? false}
-                      onCheckedChange={(checked) => persistSettings({ [item.key]: checked })}
-                    />
+                  ))}
+                </div>
+              </GlassContainer>
+
+              {/* ── Activity Types ── */}
+              <GlassContainer header={{ title: "Activity Types", description: "Choose which events trigger notifications" }}>
+                <div className="space-y-1">
+                  {([
+                    {
+                      key: "notify_transactions" as const,
+                      title: "Transactions & Payments",
+                      desc: "Escrow updates, payment confirmations, wallet top-ups, and P2P transfers",
+                      icon: <CreditCard className="w-4 h-4" />,
+                      color: "bg-green-500/10 text-green-500",
+                    },
+                    {
+                      key: "notify_messages" as const,
+                      title: "Messages",
+                      desc: "Direct messages and transaction chat notifications",
+                      icon: <MessageCircle className="w-4 h-4" />,
+                      color: "bg-blue-500/10 text-blue-500",
+                    },
+                    {
+                      key: "notify_disputes" as const,
+                      title: "Disputes",
+                      desc: "Dispute openings, messages, and resolution updates",
+                      icon: <AlertTriangle className="w-4 h-4" />,
+                      color: "bg-orange-500/10 text-orange-500",
+                    },
+                    {
+                      key: "notify_offers" as const,
+                      title: "Offers",
+                      desc: "When someone sends, accepts, or cancels an offer",
+                      icon: <Link2 className="w-4 h-4" />,
+                      color: "bg-cyan-500/10 text-cyan-500",
+                    },
+                  ] as const).map((item) => (
+                    <div key={item.key} className="flex items-center justify-between py-3.5 px-3 rounded-lg hover:bg-white/[0.03] transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${item.color}`}>{item.icon}</div>
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{item.title}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={settings?.[item.key] ?? false}
+                        onCheckedChange={(checked) => persistSettings({ [item.key]: checked })}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 pt-3 border-t border-white/[0.06]">
+                  <div className="flex items-center gap-2 px-3 py-2">
+                    <Shield className="w-3.5 h-3.5 text-muted-foreground" />
+                    <p className="text-[11px] text-muted-foreground">
+                      Security alerts and scam warnings are always sent and cannot be turned off.
+                    </p>
                   </div>
-                ))}
-              </div>
-              <p className="text-[11px] text-muted-foreground mt-4 flex items-center gap-1.5">
-                <Info className="w-3 h-3" />
-                System-critical notifications (security alerts, transaction confirmations) are always sent.
-              </p>
-            </GlassContainer>
+                </div>
+              </GlassContainer>
+
+              {/* ── Extras ── */}
+              <GlassContainer header={{ title: "Extras", description: "Digest and promotional communications" }}>
+                <div className="space-y-1">
+                  {([
+                    {
+                      key: "notify_weekly_digest" as const,
+                      title: "Weekly Digest",
+                      desc: "Summary of your activity delivered every Monday",
+                      icon: <FileText className="w-4 h-4" />,
+                      color: "bg-amber-500/10 text-amber-500",
+                    },
+                    {
+                      key: "notify_marketing" as const,
+                      title: "Product Updates & Tips",
+                      desc: "News, feature releases, and helpful tips from PaySafe",
+                      icon: <Megaphone className="w-4 h-4" />,
+                      color: "bg-pink-500/10 text-pink-500",
+                    },
+                  ] as const).map((item) => (
+                    <div key={item.key} className="flex items-center justify-between py-3.5 px-3 rounded-lg hover:bg-white/[0.03] transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${item.color}`}>{item.icon}</div>
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{item.title}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={settings?.[item.key] ?? false}
+                        onCheckedChange={(checked) => persistSettings({ [item.key]: checked })}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </GlassContainer>
+            </div>
           )}
 
           {/* ═══ APPEARANCE ═══ */}
