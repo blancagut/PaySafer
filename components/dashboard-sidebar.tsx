@@ -20,6 +20,9 @@ import {
   FileText,
   Banknote,
   MessageCircle,
+  QrCode,
+  Repeat,
+  Award,
 } from "lucide-react"
 import { Logo } from "@/components/logo"
 import { cn } from "@/lib/utils"
@@ -34,11 +37,14 @@ export const moneyNavigation = [
   { name: "Transactions", href: "/transactions", icon: History },
   { name: "Offers", href: "/offers", icon: FileText },
   { name: "Wallet", href: "/wallet", icon: Wallet },
+  { name: "QR Pay", href: "/wallet/qr", icon: QrCode, badge: "NEW" as const },
+  { name: "Recurring", href: "/wallet/recurring", icon: Repeat },
   { name: "Payouts", href: "/payouts", icon: Banknote },
 ]
 
 export const servicesNavigation = [
   { name: "Services", href: "/services", icon: Sparkles, badge: "NEW" as const },
+  { name: "Trust Score", href: "/trust", icon: Award },
   { name: "Disputes", href: "/disputes", icon: AlertTriangle },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
 ]

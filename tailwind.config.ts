@@ -115,6 +115,17 @@ const config: Config = {
           '0%, 100%': { boxShadow: '0 0 20px rgba(16, 185, 129, 0.1)' },
           '50%': { boxShadow: '0 0 30px rgba(16, 185, 129, 0.25)' },
         },
+        'shimmer': {
+          '0%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
+        },
+        'slide-up': {
+          from: { opacity: '0', transform: 'translateY(8px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        'ping-slow': {
+          '75%, 100%': { transform: 'scale(2)', opacity: '0' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -126,6 +137,9 @@ const config: Config = {
         'slide-in-right': 'slide-in-right 0.3s ease-out',
         'number-tick': 'number-tick 0.5s ease-out',
         'glow-pulse': 'glow-pulse 3s ease-in-out infinite',
+        'shimmer': 'shimmer 2s linear infinite',
+        'slide-up': 'slide-up 0.4s ease-out',
+        'ping-slow': 'ping-slow 1.5s cubic-bezier(0, 0, 0.2, 1) infinite',
       },
     },
   },

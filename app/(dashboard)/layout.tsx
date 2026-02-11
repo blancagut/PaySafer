@@ -44,6 +44,8 @@ import { NotificationDropdown } from "@/components/notifications/notification-dr
 import { PushPermissionPrompt } from "@/components/notifications/push-permission-prompt"
 import { playNotificationSound } from "@/lib/notifications/sound"
 import { DashboardSidebar, allNavRoutes } from "@/components/dashboard-sidebar"
+import { AICopilot } from "@/components/ai-copilot"
+import { InstallAppBanner } from "@/components/install-app-banner"
 
 // ─── Main Layout ───
 export default function DashboardLayout({
@@ -311,9 +313,13 @@ export default function DashboardLayout({
 
         {/* ─── Page Content ─── */}
         <main className="flex-1 p-4 md:p-6 overflow-auto">
+          <InstallAppBanner />
           <PushPermissionPrompt />
           {children}
         </main>
+
+        {/* ─── AI Financial Copilot ─── */}
+        <AICopilot />
 
         {/* ─── Mobile Bottom Nav ─── */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 glass-topbar flex items-center justify-around py-2 px-1 safe-area-bottom">
@@ -371,7 +377,7 @@ export default function DashboardLayout({
   )
 }
 
-// ─── Command Palette Component ───
+// ─── Enhanced Command Palette ───
 function CommandPalette({
   open,
   onClose,
@@ -382,28 +388,36 @@ function CommandPalette({
   onNavigate: (href: string) => void
 }) {
   const [query, setQuery] = useState("")
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const inputRef = React.useRef<HTMLInputElement>(null)
 
   const allItems = [
-    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, group: "Home" },
-    { name: "Create Offer", href: "/transactions/new", icon: Plus, group: "Actions" },
-    { name: "Transactions", href: "/transactions", icon: History, group: "Money" },
-    { name: "Offers", href: "/offers", icon: FileText, group: "Money" },
-    { name: "Wallet", href: "/wallet", icon: Wallet, group: "Money" },
-    { name: "Payouts", href: "/payouts", icon: Banknote, group: "Money" },
-    { name: "Services", href: "/services", icon: Sparkles, group: "Services" },
-    { name: "Disputes", href: "/disputes", icon: AlertTriangle, group: "Services" },
-    { name: "Analytics", href: "/analytics", icon: BarChart3, group: "Services" },
-    { name: "Messages", href: "/messages", icon: MessageCircle, group: "Account" },
-    { name: "Profile", href: "/profile", icon: User, group: "Account" },
-    { name: "Settings", href: "/settings", icon: Settings, group: "Account" },
-    { name: "Help Center", href: "/help", icon: HelpCircle, group: "Account" },
-    { name: "Trust & Security", href: "/trust", icon: Shield, group: "Account" },
+    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, group: "Navigate", keywords: ["home", "overview"] },
+    { name: "Create Offer", href: "/transactions/new", icon: Plus, group: "Actions", keywords: ["new", "send", "pay", "create", "transaction"] },
+    { name: "Transactions", href: "/transactions", icon: History, group: "Money", keywords: ["history", "deals", "payments"] },
+    { name: "Offers", href: "/offers", icon: FileText, group: "Money", keywords: ["deals", "proposals"] },
+    { name: "Wallet", href: "/wallet", icon: Wallet, group: "Money", keywords: ["balance", "funds", "cards"] },
+    { name: "QR Payments", href: "/wallet/qr", icon: Wallet, group: "Money", keywords: ["scan", "qr code", "receive"] },
+    { name: "Recurring", href: "/wallet/recurring", icon: Wallet, group: "Money", keywords: ["subscription", "auto", "scheduled", "repeat"] },
+    { name: "Payouts", href: "/payouts", icon: Banknote, group: "Money", keywords: ["withdraw", "bank", "cash out", "transfer"] },
+    { name: "Services", href: "/services", icon: Sparkles, group: "Services", keywords: ["marketplace", "find"] },
+    { name: "Trust Score", href: "/trust", icon: Shield, group: "Services", keywords: ["reputation", "safety", "security", "vouch"] },
+    { name: "Disputes", href: "/disputes", icon: AlertTriangle, group: "Services", keywords: ["conflict", "problem", "issue", "refund"] },
+    { name: "Analytics", href: "/analytics", icon: BarChart3, group: "Services", keywords: ["stats", "data", "charts", "reports"] },
+    { name: "Messages", href: "/messages", icon: MessageCircle, group: "Account", keywords: ["chat", "inbox", "conversations"] },
+    { name: "Profile", href: "/profile", icon: User, group: "Account", keywords: ["account", "photo", "name"] },
+    { name: "Settings", href: "/settings", icon: Settings, group: "Account", keywords: ["preferences", "config", "theme", "notifications"] },
+    { name: "Help Center", href: "/help", icon: HelpCircle, group: "Account", keywords: ["support", "faq", "contact"] },
   ]
 
   const filtered = query
-    ? allItems.filter((item) =>
-        item.name.toLowerCase().includes(query.toLowerCase())
-      )
+    ? allItems.filter((item) => {
+        const q = query.toLowerCase()
+        return (
+          item.name.toLowerCase().includes(q) ||
+          item.keywords.some((k) => k.includes(q))
+        )
+      })
     : allItems
 
   const groups = filtered.reduce<Record<string, typeof allItems>>((acc, item) => {
@@ -412,65 +426,108 @@ function CommandPalette({
     return acc
   }, {})
 
+  const flatItems = Object.values(groups).flat()
+
+  // Keyboard navigation
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose()
+      if (e.key === "Escape") { onClose(); return }
+      if (e.key === "ArrowDown") { e.preventDefault(); setSelectedIndex((i) => Math.min(i + 1, flatItems.length - 1)) }
+      if (e.key === "ArrowUp") { e.preventDefault(); setSelectedIndex((i) => Math.max(i - 1, 0)) }
+      if (e.key === "Enter" && flatItems[selectedIndex]) {
+        e.preventDefault()
+        onNavigate(flatItems[selectedIndex].href)
+      }
     }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
-  }, [onClose])
+  }, [onClose, flatItems, selectedIndex, onNavigate])
+
+  // Reset selection when query changes
+  useEffect(() => { setSelectedIndex(0) }, [query])
+
+  let flatIndex = -1
 
   return (
     <div className="fixed inset-0 z-[100]">
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-
-      {/* Dialog */}
-      <div className="absolute top-[20%] left-1/2 -translate-x-1/2 w-[95%] max-w-lg animate-scale-in">
+      <div className="absolute top-[18%] left-1/2 -translate-x-1/2 w-[95%] max-w-lg animate-scale-in">
         <div className="rounded-xl bg-[hsl(222,47%,8%)] border border-white/[0.10] shadow-2xl overflow-hidden">
-          {/* Search Input */}
           <div className="flex items-center gap-3 px-4 border-b border-white/[0.06]">
             <Search className="w-4 h-4 text-muted-foreground shrink-0" />
             <input
+              ref={inputRef}
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search pages, actions..."
-              className="flex-1 bg-transparent py-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+              placeholder="Type a command or search..."
+              className="flex-1 bg-transparent py-3.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
             />
-            <kbd className="text-[10px] border border-white/[0.12] bg-white/[0.04] text-muted-foreground px-1.5 py-0.5 rounded">
-              ESC
-            </kbd>
+            <kbd className="text-[10px] border border-white/[0.12] bg-white/[0.04] text-muted-foreground px-1.5 py-0.5 rounded">ESC</kbd>
           </div>
 
-          {/* Results */}
-          <div className="max-h-[300px] overflow-y-auto py-2">
-            {Object.keys(groups).length === 0 ? (
+          {/* Quick actions bar */}
+          {!query && (
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.06] overflow-x-auto">
+              {[
+                { label: "Send Money", href: "/transactions/new", emoji: "💸" },
+                { label: "Scan QR", href: "/wallet/qr", emoji: "📷" },
+                { label: "My Wallet", href: "/wallet", emoji: "👛" },
+                { label: "Analytics", href: "/analytics", emoji: "📊" },
+              ].map((a) => (
+                <button
+                  key={a.href}
+                  onClick={() => onNavigate(a.href)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.08] text-xs text-muted-foreground hover:bg-white/[0.08] hover:text-foreground transition-colors whitespace-nowrap"
+                >
+                  <span>{a.emoji}</span>
+                  <span>{a.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="max-h-[320px] overflow-y-auto py-2">
+            {flatItems.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                No results found
+                No results for &ldquo;{query}&rdquo;
               </div>
             ) : (
               Object.entries(groups).map(([group, items]) => (
                 <div key={group}>
                   <div className="px-4 py-1.5">
-                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                      {group}
-                    </span>
+                    <span className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">{group}</span>
                   </div>
-                  {items.map((item) => (
-                    <button
-                      key={item.href}
-                      onClick={() => onNavigate(item.href)}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-white/[0.06] transition-colors"
-                    >
-                      <item.icon className="w-4 h-4 text-muted-foreground" />
-                      <span>{item.name}</span>
-                      <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50 ml-auto" />
-                    </button>
-                  ))}
+                  {items.map((item) => {
+                    flatIndex++
+                    const idx = flatIndex
+                    return (
+                      <button
+                        key={item.href}
+                        onClick={() => onNavigate(item.href)}
+                        onMouseEnter={() => setSelectedIndex(idx)}
+                        className={cn(
+                          "w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors",
+                          idx === selectedIndex
+                            ? "bg-primary/10 text-primary"
+                            : "text-foreground hover:bg-white/[0.06]"
+                        )}
+                      >
+                        <item.icon className="w-4 h-4 text-muted-foreground" />
+                        <span>{item.name}</span>
+                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50 ml-auto" />
+                      </button>
+                    )
+                  })}
                 </div>
               ))
             )}
+          </div>
+
+          <div className="px-4 py-2 border-t border-white/[0.06] flex items-center gap-4 text-[10px] text-muted-foreground/50">
+            <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 rounded bg-white/[0.04] border border-white/[0.08]">↑↓</kbd> Navigate</span>
+            <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 rounded bg-white/[0.04] border border-white/[0.08]">↵</kbd> Open</span>
+            <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 rounded bg-white/[0.04] border border-white/[0.08]">Esc</kbd> Close</span>
           </div>
         </div>
       </div>

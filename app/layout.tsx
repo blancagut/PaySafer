@@ -12,9 +12,19 @@ export const metadata: Metadata = {
   title: 'PaySafer.me - Safe Payments for Global Transactions',
   description: 'The trusted escrow platform for secure transactions between buyers and sellers worldwide. Pay safer, transact with confidence.',
   metadataBase: new URL('https://paysafer.me'),
+  manifest: '/manifest.json',
+  themeColor: '#10b981',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'PaySafer',
+  },
   icons: {
     icon: '/favicon.svg',
-    apple: '/favicon.svg',
+    apple: '/icons/icon-192.png',
+  },
+  other: {
+    'mobile-web-app-capable': 'yes',
   },
 }
 
