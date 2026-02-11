@@ -52,7 +52,7 @@ export const accountNavigation = [
 
 export const adminNavigation = [
   { name: "Admin Panel", href: "/admin", icon: Shield },
-  { name: "Chats", href: "/admin/chats", icon: MessageCircle },
+  { name: "Support", href: "/admin/chats", icon: MessageCircle },
 ]
 
 /** Flat array of all routes — used for page title lookup */
@@ -166,21 +166,23 @@ export function DashboardSidebar({
         )}
       </div>
 
-      {/* ── CTA: Create Offer ── */}
-      <div className={cn("shrink-0", isCollapsed ? "px-2 pt-4" : "px-3 pt-4")}>
-        <Link
-          href="/transactions/new"
-          className={cn(
-            "flex items-center justify-center gap-2 rounded-lg font-semibold text-sm transition-all duration-200",
-            "bg-primary text-primary-foreground hover:bg-primary/90",
-            "shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30",
-            isCollapsed ? "w-10 h-10 mx-auto rounded-full p-0" : "w-full px-4 py-2.5"
-          )}
-        >
-          <Plus className={cn("shrink-0", isCollapsed ? "w-5 h-5" : "w-4 h-4")} />
-          {!isCollapsed && <span>Create Offer</span>}
-        </Link>
-      </div>
+      {/* ── CTA: Create Offer (hidden for admins) ── */}
+      {profile?.role !== "admin" && (
+        <div className={cn("shrink-0", isCollapsed ? "px-2 pt-4" : "px-3 pt-4")}>
+          <Link
+            href="/transactions/new"
+            className={cn(
+              "flex items-center justify-center gap-2 rounded-lg font-semibold text-sm transition-all duration-200",
+              "bg-primary text-primary-foreground hover:bg-primary/90",
+              "shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30",
+              isCollapsed ? "w-10 h-10 mx-auto rounded-full p-0" : "w-full px-4 py-2.5"
+            )}
+          >
+            <Plus className={cn("shrink-0", isCollapsed ? "w-5 h-5" : "w-4 h-4")} />
+            {!isCollapsed && <span>Create Offer</span>}
+          </Link>
+        </div>
+      )}
 
       {/* ── Navigation ── */}
       <nav className={cn("flex-1 py-2 overflow-y-auto", isCollapsed ? "px-2" : "px-3")}>
@@ -196,36 +198,53 @@ export function DashboardSidebar({
           ))}
         </div>
 
-        {/* Money */}
-        <SectionLabel label="Money" collapsed={isCollapsed} />
-        <div className="space-y-0.5">
-          {moneyNavigation.map((item) => (
-            <NavLink
-              key={item.href}
-              item={item}
-              isActive={isActive(item.href)}
-              collapsed={isCollapsed}
-            />
-          ))}
-        </div>
+        {/* Money (hidden for admins) */}
+        {profile?.role !== "admin" && (
+          <>
+            <SectionLabel label="Money" collapsed={isCollapsed} />
+            <div className="space-y-0.5">
+              {moneyNavigation.map((item) => (
+                <NavLink
+                  key={item.href}
+                  item={item}
+                  isActive={isActive(item.href)}
+                  collapsed={isCollapsed}
+                />
+              ))}
+            </div>
+          </>
+        )}
 
-        {/* Services */}
-        <SectionLabel label="Services" collapsed={isCollapsed} />
-        <div className="space-y-0.5">
-          {servicesNavigation.map((item) => (
-            <NavLink
-              key={item.href}
-              item={item}
-              isActive={isActive(item.href)}
-              collapsed={isCollapsed}
-            />
-          ))}
-        </div>
+        {/* Services (hidden for admins) */}
+        {profile?.role !== "admin" && (
+          <>
+            <SectionLabel label="Services" collapsed={isCollapsed} />
+            <div className="space-y-0.5">
+              {servicesNavigation.map((item) => (
+                <NavLink
+                  key={item.href}
+                  item={item}
+                  isActive={isActive(item.href)}
+                  collapsed={isCollapsed}
+                />
+              ))}
+            </div>
+          </>
+        )}
 
         {/* Account */}
         <SectionLabel label="Account" collapsed={isCollapsed} />
         <div className="space-y-0.5">
-          {accountNavigation.map((item) => (
+          {accountNavigation
+            .filter((item) => {
+              if (profile?.role === "admin") {
+                // Admins only see Settings
+                return item.href === "/settings"
+              }
+              // Regular users see all except Help is already filtered
+              return item.href !== "/help"
+            })
+            .map((item) => (
             <NavLink
               key={item.href}
               item={item}
@@ -235,10 +254,10 @@ export function DashboardSidebar({
           ))}
         </div>
 
-        {/* Admin (conditional) */}
+        {/* Platform (admin-only) */}
         {profile?.role === "admin" && (
           <>
-            <SectionLabel label="Admin" collapsed={isCollapsed} />
+            <SectionLabel label="Platform" collapsed={isCollapsed} />
             <div className="space-y-0.5">
               {adminNavigation.map((item) => (
                 <NavLink
