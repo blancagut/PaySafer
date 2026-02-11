@@ -83,6 +83,7 @@ export async function createOffer(input: {
   }
 
   revalidatePath('/dashboard')
+  revalidatePath('/offers')
   return { data }
 }
 
@@ -226,12 +227,15 @@ export async function acceptOffer(token: string) {
     return { error: 'You cannot accept your own offer' }
   }
 
-  // Check expiry
+  // Check expiry — use admin client because RLS WITH CHECK on the
+  // non-creator update policy rejects status changes away from 'pending'
   if (offer.expires_at && new Date(offer.expires_at) < new Date()) {
-    await supabase
+    const admin = createAdminClient()
+    await admin
       .from('offers')
       .update({ status: 'expired' })
       .eq('id', offer.id)
+      .eq('status', 'pending')
     return { error: 'This offer has expired' }
   }
 
@@ -274,8 +278,9 @@ export async function acceptOffer(token: string) {
     return { error: txnError.message }
   }
 
-  // Update the offer to accepted (also via admin to avoid RLS edge cases)
-  const { error: updateError } = await admin
+  // Update the offer to accepted — guard with status='pending' to prevent
+  // a race condition where two users accept simultaneously
+  const { data: updatedOffer, error: updateError } = await admin
     .from('offers')
     .update({
       status: 'accepted',
@@ -283,13 +288,25 @@ export async function acceptOffer(token: string) {
       transaction_id: transaction.id,
     })
     .eq('id', offer.id)
+    .eq('status', 'pending')
+    .select()
+    .maybeSingle()
 
   if (updateError) {
+    // Rollback: delete the transaction we just created
+    await admin.from('transactions').delete().eq('id', transaction.id)
     return { error: updateError.message }
+  }
+
+  if (!updatedOffer) {
+    // Another user already accepted — rollback the duplicate transaction
+    await admin.from('transactions').delete().eq('id', transaction.id)
+    return { error: 'This offer has already been accepted by someone else' }
   }
 
   revalidatePath('/dashboard')
   revalidatePath('/transactions')
+  revalidatePath('/offers')
 
   return { data: { offerId: offer.id, transactionId: transaction.id } }
 }
@@ -319,6 +336,7 @@ export async function cancelOffer(offerId: string) {
   }
 
   revalidatePath('/dashboard')
+  revalidatePath('/offers')
   return { data }
 }
 

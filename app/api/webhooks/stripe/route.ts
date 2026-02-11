@@ -64,6 +64,7 @@ import {
   type IntakeErrorResponse,
   type WebhookErrorCode,
 } from '@/lib/webhooks';
+import { processStripeEvent } from '@/lib/stripe/webhook-processor';
 
 // ============================================================================
 // CONFIGURATION
@@ -175,9 +176,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Add event ID to result for downstream processing reference
   verificationResult.eventId = eventId ?? undefined;
 
+  // ---------------------------------------------------------------------------
+  // STEP 9: Process the event (state transitions, system messages)
+  // ---------------------------------------------------------------------------
+  try {
+    const parsedEvent = JSON.parse(rawBody);
+    await processStripeEvent(parsedEvent);
+  } catch (processError) {
+    // Log but still return 200 — we've received and verified the event.
+    // Re-processing can be handled via dead-letter queue.
+    console.error('[webhook] Event processing error:', processError);
+  }
+
   // Return success response
-  // NOTE: At this point, a processor would handle the event
-  // This endpoint ONLY acknowledges receipt
   const response: IntakeResponse = {
     received: true,
     eventId: eventId ?? undefined,

@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation"
 import Link from "next/link"
 import { getTransaction } from "@/lib/actions/transactions"
+import { getTransactionMessages } from "@/lib/actions/transaction-messages"
 import { createClient } from "@/lib/supabase/server"
-import { TransactionDetailClient } from "./client"
+import { DealRoom } from "./deal-room"
 
 export default async function TransactionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -32,24 +33,30 @@ export default async function TransactionDetailPage({ params }: { params: Promis
   const isBuyer = transaction.buyer_id === user.id
   const isSeller = transaction.seller_id === user.id
 
-  // Fetch buyer/seller profile names
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("id, full_name, email")
-    .in("id", [transaction.buyer_id, transaction.seller_id].filter(Boolean))
+  // Fetch profiles and messages in parallel
+  const [profilesResult, messagesResult] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("id, full_name, email")
+      .in("id", [transaction.buyer_id, transaction.seller_id].filter(Boolean)),
+    getTransactionMessages(id),
+  ])
 
+  const profiles = profilesResult.data
   const buyerProfile = profiles?.find((p: any) => p.id === transaction.buyer_id)
   const sellerProfile = profiles?.find((p: any) => p.id === transaction.seller_id)
 
   return (
-    <TransactionDetailClient
+    <DealRoom
       transaction={transaction}
       isBuyer={isBuyer}
       isSeller={isSeller}
+      userId={user.id}
       buyerName={buyerProfile?.full_name || buyerProfile?.email || "Unknown"}
       buyerEmail={buyerProfile?.email || transaction.seller_email}
       sellerName={sellerProfile?.full_name || sellerProfile?.email || transaction.seller_email}
       sellerEmail={sellerProfile?.email || transaction.seller_email}
+      initialMessages={messagesResult.data || []}
     />
   )
 }

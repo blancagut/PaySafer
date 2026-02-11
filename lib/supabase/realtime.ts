@@ -6,12 +6,17 @@ import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/
 
 type SubscribableTable =
   | "transactions"
+  | "transaction_messages"
   | "disputes"
   | "dispute_messages"
   | "notifications"
   | "offers"
   | "support_messages"
   | "support_tickets"
+  | "wallets"
+  | "wallet_transactions"
+  | "transfers"
+  | "payment_requests"
 
 type PostgresEvent = "INSERT" | "UPDATE" | "DELETE" | "*"
 
@@ -188,5 +193,85 @@ export function useSupportChatSubscription(
       }
     },
     enabled: !!ticketId,
+  })
+}
+
+/**
+ * Subscribe to transaction chat messages in real-time.
+ */
+export function useTransactionChatSubscription(
+  transactionId: string | undefined,
+  onMessage: (message: Record<string, unknown>) => void
+) {
+  return useRealtimeSubscription({
+    table: "transaction_messages",
+    event: "INSERT",
+    filter: transactionId ? `transaction_id=eq.${transactionId}` : undefined,
+    onData: (payload) => {
+      if (payload.new && typeof payload.new === "object") {
+        onMessage(payload.new as Record<string, unknown>)
+      }
+    },
+    enabled: !!transactionId,
+  })
+}
+
+/**
+ * Subscribe to wallet balance changes for the current user.
+ */
+export function useWalletSubscription(
+  userId: string | undefined,
+  onUpdate: (wallet: Record<string, unknown>) => void
+) {
+  return useRealtimeSubscription({
+    table: "wallets",
+    event: "UPDATE",
+    filter: userId ? `user_id=eq.${userId}` : undefined,
+    onData: (payload) => {
+      if (payload.new && typeof payload.new === "object") {
+        onUpdate(payload.new as Record<string, unknown>)
+      }
+    },
+    enabled: !!userId,
+  })
+}
+
+/**
+ * Subscribe to incoming transfers (where user is the recipient).
+ */
+export function useIncomingTransferSubscription(
+  userId: string | undefined,
+  onTransfer: (transfer: Record<string, unknown>) => void
+) {
+  return useRealtimeSubscription({
+    table: "transfers",
+    event: "INSERT",
+    filter: userId ? `recipient_id=eq.${userId}` : undefined,
+    onData: (payload) => {
+      if (payload.new && typeof payload.new === "object") {
+        onTransfer(payload.new as Record<string, unknown>)
+      }
+    },
+    enabled: !!userId,
+  })
+}
+
+/**
+ * Subscribe to incoming payment requests (where user is the payer).
+ */
+export function usePaymentRequestSubscription(
+  userId: string | undefined,
+  onRequest: (request: Record<string, unknown>) => void
+) {
+  return useRealtimeSubscription({
+    table: "payment_requests",
+    event: "INSERT",
+    filter: userId ? `payer_id=eq.${userId}` : undefined,
+    onData: (payload) => {
+      if (payload.new && typeof payload.new === "object") {
+        onRequest(payload.new as Record<string, unknown>)
+      }
+    },
+    enabled: !!userId,
   })
 }

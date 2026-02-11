@@ -29,6 +29,7 @@ import {
   Command,
   Banknote,
   MessageCircle,
+  Send,
 } from "lucide-react"
 import { Logo } from "@/components/logo"
 import { cn } from "@/lib/utils"
@@ -57,6 +58,7 @@ const navigation = [
   { name: "Disputes", href: "/disputes", icon: AlertTriangle },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Wallet", href: "/wallet", icon: Wallet },
+  { name: "Send Money", href: "/wallet/send", icon: Send },
   { name: "Payouts", href: "/payouts", icon: Banknote },
 ]
 

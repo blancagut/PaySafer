@@ -43,7 +43,11 @@ export function OfferAcceptClient({ offer, token, isAuthenticated }: { offer: Of
       }
       setAccepted(true)
       setTransactionId(result.data!.transactionId)
-      toast.success("Offer accepted! Transaction created.")
+      toast.success("Offer accepted! Opening Deal Room...")
+      // Auto-redirect to Deal Room after short delay
+      setTimeout(() => {
+        router.push(`/transactions/${result.data!.transactionId}`)
+      }, 1500)
     } catch {
       toast.error("Failed to accept offer")
     } finally {
