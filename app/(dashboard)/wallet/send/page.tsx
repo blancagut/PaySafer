@@ -23,6 +23,18 @@ import { sendMoney } from "@/lib/actions/transfers"
 import { getWallet } from "@/lib/actions/wallet"
 import { toast } from "sonner"
 
+const CURRENCIES = [
+  { code: "EUR", symbol: "€", name: "Euro" },
+  { code: "USD", symbol: "$", name: "US Dollar" },
+  { code: "GBP", symbol: "£", name: "British Pound" },
+] as const
+
+type CurrencyCode = typeof CURRENCIES[number]["code"]
+
+function getCurrencySymbol(code: string) {
+  return CURRENCIES.find(c => c.code === code)?.symbol ?? "€"
+}
+
 function formatCurrency(amount: number, currency = "EUR") {
   return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount)
 }
@@ -48,7 +60,7 @@ function SendMoneyContent() {
   const [note, setNote] = useState("")
   const [sending, setSending] = useState(false)
   const [balance, setBalance] = useState(0)
-  const [currency, setCurrency] = useState("EUR")
+  const [currency, setCurrency] = useState<CurrencyCode>("EUR")
   const [transferResult, setTransferResult] = useState<any>(null)
   const searchTimeout = useRef<NodeJS.Timeout | null>(null)
 
@@ -331,8 +343,24 @@ function SendMoneyContent() {
 
           {/* Amount input */}
           <div className="text-center py-4">
+            {/* Currency selector */}
+            <div className="flex justify-center gap-1 mb-4">
+              {CURRENCIES.map(c => (
+                <button
+                  key={c.code}
+                  onClick={() => setCurrency(c.code)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                    currency === c.code
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08] border border-white/[0.10]"
+                  }`}
+                >
+                  {c.symbol} {c.code}
+                </button>
+              ))}
+            </div>
             <div className="relative inline-flex items-baseline justify-center">
-              <span className="text-3xl text-muted-foreground mr-1">€</span>
+              <span className="text-3xl text-muted-foreground mr-1">{getCurrencySymbol(currency)}</span>
               <input
                 type="text"
                 inputMode="decimal"
@@ -361,7 +389,7 @@ function SendMoneyContent() {
                   amount === preset.toString() ? "border-primary/50 bg-primary/10" : ""
                 }`}
               >
-                €{preset}
+                {getCurrencySymbol(currency)}{preset}
               </Button>
             ))}
           </div>

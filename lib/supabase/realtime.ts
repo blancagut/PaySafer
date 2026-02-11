@@ -17,6 +17,8 @@ type SubscribableTable =
   | "wallet_transactions"
   | "transfers"
   | "payment_requests"
+  | "direct_messages"
+  | "conversations"
 
 type PostgresEvent = "INSERT" | "UPDATE" | "DELETE" | "*"
 

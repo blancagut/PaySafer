@@ -87,7 +87,8 @@ export async function updateSession(request: NextRequest) {
       user && request.nextUrl.pathname.startsWith('/payouts') ||
       user && request.nextUrl.pathname.startsWith('/services') ||
       user && request.nextUrl.pathname.startsWith('/profile') ||
-      user && request.nextUrl.pathname.startsWith('/settings')) {
+      user && request.nextUrl.pathname.startsWith('/settings') ||
+      user && request.nextUrl.pathname.startsWith('/messages')) {
     try {
       const { data: profile, error: profileError } = await supabase
         .from('profiles')

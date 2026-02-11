@@ -20,6 +20,18 @@ import { searchUsers, getContacts, getRecentRecipients, type UserSearchResult } 
 import { requestMoney } from "@/lib/actions/transfers"
 import { toast } from "sonner"
 
+const CURRENCIES = [
+  { code: "EUR", symbol: "€", name: "Euro" },
+  { code: "USD", symbol: "$", name: "US Dollar" },
+  { code: "GBP", symbol: "£", name: "British Pound" },
+] as const
+
+type CurrencyCode = typeof CURRENCIES[number]["code"]
+
+function getCurrencySymbol(code: string) {
+  return CURRENCIES.find(c => c.code === code)?.symbol ?? "€"
+}
+
 function formatCurrency(amount: number, currency = "EUR") {
   return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount)
 }
@@ -41,6 +53,7 @@ export default function RequestMoneyPage() {
   const [searching, setSearching] = useState(false)
   const [selectedUser, setSelectedUser] = useState<UserSearchResult | null>(null)
   const [amount, setAmount] = useState("")
+  const [currency, setCurrency] = useState<CurrencyCode>("EUR")
   const [note, setNote] = useState("")
   const [sending, setSending] = useState(false)
   const searchTimeout = useRef<NodeJS.Timeout | null>(null)
@@ -96,6 +109,7 @@ export default function RequestMoneyPage() {
     const result = await requestMoney({
       payerIdentifier: selectedUser.username || selectedUser.email,
       amount: numAmount,
+      currency,
       note: note || undefined,
     })
     setSending(false)
@@ -237,8 +251,24 @@ export default function RequestMoneyPage() {
 
           <div className="text-center py-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-3">Request amount</p>
+            {/* Currency selector */}
+            <div className="flex justify-center gap-1 mb-4">
+              {CURRENCIES.map(c => (
+                <button
+                  key={c.code}
+                  onClick={() => setCurrency(c.code)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                    currency === c.code
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08] border border-white/[0.10]"
+                  }`}
+                >
+                  {c.symbol} {c.code}
+                </button>
+              ))}
+            </div>
             <div className="relative inline-flex items-baseline justify-center">
-              <span className="text-3xl text-muted-foreground mr-1">€</span>
+              <span className="text-3xl text-muted-foreground mr-1">{getCurrencySymbol(currency)}</span>
               <input
                 type="text"
                 inputMode="decimal"
@@ -262,7 +292,7 @@ export default function RequestMoneyPage() {
                   amount === preset.toString() ? "border-primary/50 bg-primary/10" : ""
                 }`}
               >
-                €{preset}
+                {getCurrencySymbol(currency)}{preset}
               </Button>
             ))}
           </div>
@@ -288,7 +318,7 @@ export default function RequestMoneyPage() {
             ) : (
               <>
                 <ArrowDownRight className="w-5 h-5" />
-                Request {numAmount > 0 ? formatCurrency(numAmount) : ""}
+                Request {numAmount > 0 ? formatCurrency(numAmount, currency) : ""}
               </>
             )}
           </Button>
@@ -303,7 +333,7 @@ export default function RequestMoneyPage() {
           </div>
           <div>
             <p className="text-2xl font-bold text-foreground">Request Sent!</p>
-            <p className="text-lg text-primary font-semibold mt-1">{formatCurrency(numAmount)}</p>
+            <p className="text-lg text-primary font-semibold mt-1">{formatCurrency(numAmount, currency)}</p>
             <p className="text-sm text-muted-foreground mt-1">
               from {selectedUser?.username ? `$${selectedUser.username}` : selectedUser?.full_name || selectedUser?.email}
             </p>
@@ -315,7 +345,7 @@ export default function RequestMoneyPage() {
             <Button
               variant="outline"
               onClick={() => {
-                setStep("recipient"); setSelectedUser(null); setAmount(""); setNote("")
+                setStep("recipient"); setSelectedUser(null); setAmount(""); setNote(""); setCurrency("EUR")
               }}
               className="flex-1 bg-white/[0.04] border-white/[0.10]"
             >

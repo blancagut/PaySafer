@@ -59,6 +59,7 @@ const navigation = [
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Wallet", href: "/wallet", icon: Wallet },
   { name: "Send Money", href: "/wallet/send", icon: Send },
+  { name: "Messages", href: "/messages", icon: MessageCircle },
   { name: "Payouts", href: "/payouts", icon: Banknote },
 ]
 
