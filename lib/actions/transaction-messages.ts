@@ -87,6 +87,44 @@ export async function sendTransactionMessage(
     return { error: error.message }
   }
 
+  // Fire-and-forget: Run scam detection every 5 messages
+  try {
+    const { count } = await supabase
+      .from('transaction_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('transaction_id', transactionId)
+      .eq('message_type', 'text')
+
+    if (count && count % 5 === 0) {
+      // Get last 5 messages for analysis
+      const { data: recentMsgs } = await supabase
+        .from('transaction_messages')
+        .select('sender_id, message, created_at')
+        .eq('transaction_id', transactionId)
+        .eq('message_type', 'text')
+        .order('created_at', { ascending: false })
+        .limit(5)
+
+      if (recentMsgs && recentMsgs.length > 0) {
+        import('@/lib/ai/scam-detector').then(({ detectScamPatterns }) => {
+          detectScamPatterns(
+            recentMsgs.map(m => ({
+              sender: m.sender_id === user.id ? 'you' : 'counterparty',
+              content: m.message,
+              timestamp: m.created_at,
+            })),
+            'transaction',
+            transactionId,
+            user.id,
+            data.id
+          ).catch(err => console.error('[AI Scam] Detection failed:', err))
+        }).catch(() => {})
+      }
+    }
+  } catch {
+    // Scam detection failure never blocks messaging
+  }
+
   return { data: data as TransactionMessage }
 }
 

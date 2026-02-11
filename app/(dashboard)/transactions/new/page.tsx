@@ -13,6 +13,8 @@ import {
   FileText,
   Copy,
   Check,
+  Sparkles,
+  Loader2,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -49,6 +51,37 @@ export default function CreateOfferPage() {
   const [submitting, setSubmitting] = useState(false)
   const [createdOffer, setCreatedOffer] = useState<{ token: string; id: string } | null>(null)
   const [copied, setCopied] = useState(false)
+  const [aiOptimizing, setAiOptimizing] = useState(false)
+
+  const handleAIOptimize = async () => {
+    if (!formData.title.trim() && !formData.description.trim()) {
+      toast.error("Add a title or description first so AI has something to enhance")
+      return
+    }
+    setAiOptimizing(true)
+    try {
+      const res = await fetch("/api/ai/optimize-offer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: formData.title,
+          description: formData.description,
+          amount: formData.amount ? Number(formData.amount) : undefined,
+          currency: formData.currency,
+          role: formData.creator_role,
+        }),
+      })
+      if (!res.ok) throw new Error("AI optimization failed")
+      const data = await res.json()
+      if (data.optimizedTitle) setFormData(prev => ({ ...prev, title: data.optimizedTitle }))
+      if (data.optimizedDescription) setFormData(prev => ({ ...prev, description: data.optimizedDescription }))
+      toast.success("Offer enhanced by AI! Review the changes.")
+    } catch {
+      toast.error("AI optimization unavailable right now")
+    } finally {
+      setAiOptimizing(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -295,7 +328,21 @@ export default function CreateOfferPage() {
               <p className="text-xs text-muted-foreground">Be specific about deliverables, timelines, and conditions.</p>
             </div>
 
-            <div className="pt-2">
+            <div className="pt-2 space-y-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleAIOptimize}
+                disabled={aiOptimizing || (!formData.title.trim() && !formData.description.trim())}
+                className="w-full border-violet-500/30 text-violet-400 hover:bg-violet-500/10 hover:text-violet-300"
+              >
+                {aiOptimizing ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4 mr-2" />
+                )}
+                {aiOptimizing ? "Enhancing with AI..." : "Enhance with AI"}
+              </Button>
               <Button type="submit" disabled={submitting} className="w-full" size="lg">
                 {submitting ? "Creating..." : "Create Offer & Get Link"}
               </Button>

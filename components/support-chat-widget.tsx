@@ -206,7 +206,7 @@ const quickReplies = [
 ]
 
 // --- Chat Modes ---
-type ChatMode = "faq" | "live"
+type ChatMode = "faq" | "ai" | "live"
 
 // --- Main Chat Widget ---
 
@@ -216,6 +216,8 @@ export function SupportChatWidget() {
   const [ticket, setTicket] = useState<SupportTicket | null>(null)
   const [messages, setMessages] = useState<SupportMessage[]>([])
   const [faqMessages, setFaqMessages] = useState<{ role: "user" | "bot"; text: string }[]>([])
+  const [aiMessages, setAiMessages] = useState<{ role: "user" | "ai"; text: string }[]>([])
+  const [aiThinking, setAiThinking] = useState(false)
   const [input, setInput] = useState("")
   const [isSending, setIsSending] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -248,7 +250,7 @@ export function SupportChatWidget() {
   // Scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, faqMessages])
+  }, [messages, faqMessages, aiMessages])
 
   // Open chat
   const handleOpen = useCallback(async () => {
@@ -274,6 +276,57 @@ export function SupportChatWidget() {
       { role: "bot", text: answer },
     ])
   }
+
+  // Start AI chat mode — powered by OpenAI
+  const handleStartAIChat = useCallback(() => {
+    setMode("ai")
+    setAiMessages([{ role: "ai", text: "Hi! I'm the PaySafer AI assistant. I can help with questions about escrow, transactions, payments, disputes, and more. What would you like to know?" }])
+    setTimeout(() => inputRef.current?.focus(), 200)
+  }, [])
+
+  // Send message to AI agent
+  const handleAISend = useCallback(async () => {
+    if (!input.trim() || aiThinking) return
+
+    const msg = input.trim()
+    setInput("")
+    setAiMessages((prev) => [...prev, { role: "user", text: msg }])
+    setAiThinking(true)
+
+    try {
+      const history = aiMessages
+        .filter(m => m.role === "user" || m.role === "ai")
+        .slice(-10)
+        .map(m => ({ role: m.role === "user" ? "user" as const : "agent" as const, message: m.text }))
+
+      const res = await fetch("/api/ai/support", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: msg, history }),
+      })
+
+      const data = await res.json()
+
+      if (data.should_escalate) {
+        setAiMessages((prev) => [
+          ...prev,
+          { role: "ai", text: data.response },
+        ])
+        // Auto-transition to live chat after a short delay
+        setTimeout(() => handleStartLiveChat(), 1500)
+      } else {
+        setAiMessages((prev) => [...prev, { role: "ai", text: data.response }])
+      }
+    } catch {
+      setAiMessages((prev) => [
+        ...prev,
+        { role: "ai", text: "I'm having trouble right now. Let me connect you with a human agent." },
+      ])
+      setTimeout(() => handleStartLiveChat(), 1500)
+    } finally {
+      setAiThinking(false)
+    }
+  }, [input, aiMessages, aiThinking])
 
   // Start live chat - connect to real support ticket
   const handleStartLiveChat = useCallback(async () => {
@@ -334,7 +387,8 @@ export function SupportChatWidget() {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
-      if (mode === "live") handleSend()
+      if (mode === "ai") handleAISend()
+      else if (mode === "live") handleSend()
     }
   }
 
@@ -346,6 +400,7 @@ export function SupportChatWidget() {
     setTicket(null)
     setMessages([])
     setFaqMessages([])
+    setAiMessages([])
     setMode("faq")
     setLiveStarted(false)
   }, [ticket])
@@ -390,12 +445,12 @@ export function SupportChatWidget() {
                     <h3 className="text-sm font-semibold text-foreground">PaySafer Support</h3>
                     <p className="text-[11px] text-emerald-400 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-                      {mode === "live" ? "Live Chat - Connected to support" : "Online - Ask us anything"}
+                      {mode === "live" ? "Live Chat - Connected to support" : mode === "ai" ? "AI Assistant - Powered by AI" : "Online - Ask us anything"}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  {liveStarted && (
+                  {(liveStarted || mode === "ai") && (
                     <Button
                       variant="ghost"
                       size="icon"
@@ -509,31 +564,139 @@ export function SupportChatWidget() {
                     </div>
                   </div>
 
-                  {/* Live Chat Button */}
+                  {/* AI Assistant + Live Chat Buttons */}
                   <motion.div
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.3 }}
-                    className="pt-3"
+                    className="pt-3 space-y-2"
                   >
                     <button
-                      onClick={handleStartLiveChat}
+                      onClick={handleStartAIChat}
                       className={cn(
                         "w-full flex items-center justify-center gap-2.5 px-4 py-3 rounded-xl",
-                        "bg-gradient-to-r from-emerald-500/15 to-teal-500/10",
-                        "border border-emerald-500/25",
-                        "text-emerald-400 text-sm font-semibold",
-                        "hover:from-emerald-500/25 hover:to-teal-500/15 hover:border-emerald-500/40",
+                        "bg-gradient-to-r from-violet-500/15 to-blue-500/10",
+                        "border border-violet-500/25",
+                        "text-violet-400 text-sm font-semibold",
+                        "hover:from-violet-500/25 hover:to-blue-500/15 hover:border-violet-500/40",
                         "transition-all duration-200 group"
                       )}
                     >
-                      <Zap className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                      Live Chat - Talk to our team
+                      <Sparkles className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                      AI Assistant - Instant answers
                     </button>
-                    <p className="text-[10px] text-muted-foreground/40 text-center mt-1.5">
-                      A real person will respond to your message
+                    <button
+                      onClick={handleStartLiveChat}
+                      className={cn(
+                        "w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl",
+                        "bg-gradient-to-r from-emerald-500/10 to-teal-500/05",
+                        "border border-emerald-500/15",
+                        "text-emerald-400/80 text-xs font-medium",
+                        "hover:from-emerald-500/20 hover:to-teal-500/10 hover:border-emerald-500/30",
+                        "transition-all duration-200 group"
+                      )}
+                    >
+                      <Zap className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                      Live Chat - Talk to a human
+                    </button>
+                    <p className="text-[10px] text-muted-foreground/40 text-center mt-1">
+                      AI responds instantly · Human agents during business hours
                     </p>
                   </motion.div>
+                </>
+              )}
+
+              {/* --- AI Mode --- */}
+              {mode === "ai" && (
+                <>
+                  {/* AI greeting badge */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex justify-center my-2"
+                  >
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-violet-500/[0.08] border border-violet-500/15 text-xs text-violet-400">
+                      <Sparkles className="w-3 h-3" />
+                      <span>AI Assistant Mode</span>
+                    </div>
+                  </motion.div>
+
+                  {/* AI messages */}
+                  {aiMessages.map((msg, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, y: 12, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      className={cn(
+                        "flex gap-2.5 max-w-[85%]",
+                        msg.role === "user" ? "ml-auto flex-row-reverse" : "mr-auto"
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center mt-1",
+                          msg.role === "user"
+                            ? "bg-emerald-500/20 text-emerald-400"
+                            : "bg-violet-500/20 text-violet-400"
+                        )}
+                      >
+                        {msg.role === "user" ? <User className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
+                      </div>
+                      <div
+                        className={cn(
+                          "rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
+                          msg.role === "user"
+                            ? "bg-emerald-500/15 border border-emerald-500/20 text-foreground rounded-br-md"
+                            : "bg-violet-500/[0.08] border border-violet-500/15 text-foreground rounded-bl-md"
+                        )}
+                      >
+                        {msg.role === "ai" && (
+                          <p className="text-[10px] font-medium text-violet-400/80 mb-1 flex items-center gap-1">
+                            <Sparkles className="w-2.5 h-2.5" />
+                            AI Assistant
+                          </p>
+                        )}
+                        <p className="whitespace-pre-wrap">{msg.text}</p>
+                      </div>
+                    </motion.div>
+                  ))}
+
+                  {/* AI typing indicator */}
+                  {aiThinking && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      className="flex items-center gap-2.5 max-w-[85%]"
+                    >
+                      <div className="w-7 h-7 rounded-full bg-violet-500/20 flex items-center justify-center flex-shrink-0">
+                        <Sparkles className="w-3.5 h-3.5 text-violet-400" />
+                      </div>
+                      <div className="rounded-2xl rounded-bl-md bg-violet-500/[0.08] border border-violet-500/15 px-4 py-3 flex items-center gap-1">
+                        <motion.span className="w-2 h-2 bg-violet-400/50 rounded-full" animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1, repeat: Infinity, delay: 0 }} />
+                        <motion.span className="w-2 h-2 bg-violet-400/50 rounded-full" animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1, repeat: Infinity, delay: 0.2 }} />
+                        <motion.span className="w-2 h-2 bg-violet-400/50 rounded-full" animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1, repeat: Infinity, delay: 0.4 }} />
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* Escalate to human button */}
+                  {aiMessages.length > 2 && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 1 }}
+                      className="flex justify-center pt-2"
+                    >
+                      <button
+                        onClick={handleStartLiveChat}
+                        className="text-[11px] text-emerald-400/70 hover:text-emerald-400 transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/[0.06] border border-emerald-500/10 hover:border-emerald-500/20"
+                      >
+                        <Zap className="w-3 h-3" />
+                        Talk to a human instead
+                      </button>
+                    </motion.div>
+                  )}
                 </>
               )}
 
@@ -583,7 +746,7 @@ export function SupportChatWidget() {
               {mode === "faq" ? (
                 <div className="text-center py-1">
                   <p className="text-[11px] text-muted-foreground/50">
-                    Select a question above or start a live chat
+                    Select a question above or start AI chat
                   </p>
                 </div>
               ) : (
@@ -594,7 +757,7 @@ export function SupportChatWidget() {
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={handleKeyDown}
-                      placeholder="Type your message to support..."
+                      placeholder={mode === "ai" ? "Ask the AI assistant anything..." : "Type your message to support..."}
                       rows={1}
                       className={cn(
                         "w-full resize-none rounded-xl px-4 py-2.5 pr-12 text-sm",
@@ -612,19 +775,19 @@ export function SupportChatWidget() {
                     />
                   </div>
                   <Button
-                    onClick={handleSend}
-                    disabled={!input.trim() || isSending || isLoading}
+                    onClick={mode === "ai" ? handleAISend : handleSend}
+                    disabled={!input.trim() || isSending || isLoading || aiThinking}
                     size="icon"
                     className={cn(
                       "h-10 w-10 rounded-xl flex-shrink-0",
-                      "bg-gradient-to-br from-emerald-500 to-teal-600",
-                      "hover:from-emerald-400 hover:to-teal-500",
+                      mode === "ai"
+                        ? "bg-gradient-to-br from-violet-500 to-blue-600 hover:from-violet-400 hover:to-blue-500 shadow-lg shadow-violet-500/20"
+                        : "bg-gradient-to-br from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 shadow-lg shadow-emerald-500/20",
                       "disabled:opacity-40 disabled:cursor-not-allowed",
-                      "shadow-lg shadow-emerald-500/20",
                       "transition-all duration-200"
                     )}
                   >
-                    {isSending ? (
+                    {isSending || aiThinking ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <Send className="w-4 h-4" />
@@ -633,7 +796,7 @@ export function SupportChatWidget() {
                 </div>
               )}
               <p className="text-[10px] text-muted-foreground/40 text-center mt-2">
-                Powered by PaySafer Support
+                {mode === "ai" ? "Powered by AI · Not always accurate" : "Powered by PaySafer Support"}
               </p>
             </div>
           </motion.div>

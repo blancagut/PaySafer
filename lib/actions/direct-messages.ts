@@ -179,6 +179,43 @@ export async function sendDirectMessage(conversationId: string, message: string)
     .update({ last_message_at: new Date().toISOString() })
     .eq('id', conversationId)
 
+  // Fire-and-forget: Scam detection every 5 messages
+  try {
+    const { count } = await supabase
+      .from('direct_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('conversation_id', conversationId)
+      .eq('message_type', 'text')
+
+    if (count && count % 5 === 0) {
+      const { data: recentMsgs } = await supabase
+        .from('direct_messages')
+        .select('sender_id, message, created_at')
+        .eq('conversation_id', conversationId)
+        .eq('message_type', 'text')
+        .order('created_at', { ascending: false })
+        .limit(5)
+
+      if (recentMsgs && recentMsgs.length > 0) {
+        import('@/lib/ai/scam-detector').then(({ detectScamPatterns }) => {
+          detectScamPatterns(
+            recentMsgs.map(m => ({
+              sender: m.sender_id === user.id ? 'you' : 'counterparty',
+              content: m.message,
+              timestamp: m.created_at,
+            })),
+            'direct',
+            conversationId,
+            user.id,
+            data.id
+          ).catch(err => console.error('[AI Scam] DM detection failed:', err))
+        }).catch(() => {})
+      }
+    }
+  } catch {
+    // Never block messaging
+  }
+
   return { data: data as DirectMessage }
 }
 

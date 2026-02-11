@@ -47,6 +47,7 @@ import { createClient } from "@/lib/supabase/client"
 import { useNotificationSubscription } from "@/lib/supabase/realtime"
 import { toast } from "sonner"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { LanguageSelector } from "@/components/language-selector"
 
 // ─── Navigation Config ───
 const navigation = [
@@ -409,6 +410,9 @@ export default function DashboardLayout({
                 <Command className="w-2.5 h-2.5" />K
               </kbd>
             </button>
+
+            {/* Language Selector */}
+            <LanguageSelector />
 
             {/* Notifications */}
             <NotificationBell

@@ -211,3 +211,48 @@ The backend structure is complete and functional. The remaining work is mostly:
 3. Testing each flow end-to-end
 
 All the hard parts (auth, middleware, RLS, server actions) are done! 🎉
+
+---
+
+## 🤖 AI Features Setup (OpenAI)
+
+### 1. Add your OpenAI API key
+
+Add this to your `.env.local`:
+
+```
+OPENAI_API_KEY=sk-...your-key-here...
+```
+
+Get a key from https://platform.openai.com/api-keys
+
+### 2. Run AI database tables
+
+In the Supabase SQL Editor, run these files **in order**:
+
+1. `supabase/ai_usage.sql` — AI usage logging table
+2. `supabase/translations.sql` — Translation cache table
+3. `supabase/scam_flags.sql` — Scam detection flags table
+4. `supabase/ai_tables.sql` — Support messages AI flag
+
+### 3. What's included
+
+| Feature | Model | Where |
+|---------|-------|-------|
+| Scam Detection | GPT-4o-mini | Background, every 5th chat message |
+| AI Support Agent | GPT-4o-mini / GPT-4o | Support chat widget (FAQ → AI → Live) |
+| Translation (16 languages) | GPT-4o-mini | User-triggered, cached in DB |
+| Offer Optimizer | GPT-4o-mini | Button-triggered on offer creation |
+
+### 4. Cost estimate per 1,000 active users/month
+
+| Feature | Calls/mo | Tokens/call | Model | Est. cost |
+|---------|----------|-------------|-------|-----------|
+| Scam Detection | ~2,000 | ~800 | 4o-mini | ~$0.24 |
+| Support Agent | ~1,500 | ~1,200 | 4o-mini | ~$0.27 |
+| Translation | ~3,000 | ~200 | 4o-mini | ~$0.09 |
+| Offer Optimizer | ~500 | ~600 | 4o-mini | ~$0.05 |
+| **Total** | | | | **~$0.65/mo** |
+
+All usage is logged to `ai_usage_logs` table for monitoring.
+
