@@ -26,6 +26,9 @@ export interface Offer {
   accepted_by: string | null
   transaction_id: string | null
   expires_at: string | null
+  image_urls: string[]
+  category: string | null
+  delivery_days: number | null
   created_at: string
   updated_at: string
 }
@@ -45,6 +48,10 @@ export async function createOffer(input: {
   amount: number
   currency: string
   creator_role: CreatorRole
+  image_urls?: string[]
+  category?: string
+  delivery_days?: number
+  expires_at?: string
 }) {
   const supabase = await createClient()
   const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -60,22 +67,36 @@ export async function createOffer(input: {
   if (!['buyer', 'seller'].includes(input.creator_role)) {
     return { error: 'Invalid role selection' }
   }
+  if (input.image_urls && input.image_urls.length > 3) {
+    return { error: 'Maximum 3 images allowed' }
+  }
+  if (input.delivery_days && input.delivery_days <= 0) {
+    return { error: 'Delivery days must be positive' }
+  }
 
   // Generate unique token for shareable link
   const token = crypto.randomBytes(32).toString('hex')
 
+  const insertData: Record<string, unknown> = {
+    creator_id: user.id,
+    title: input.title.trim(),
+    description: input.description.trim(),
+    amount: input.amount,
+    currency: input.currency || 'USD',
+    creator_role: input.creator_role,
+    token,
+    status: 'pending',
+  }
+
+  // Optional fields
+  if (input.image_urls?.length) insertData.image_urls = input.image_urls
+  if (input.category?.trim()) insertData.category = input.category.trim()
+  if (input.delivery_days) insertData.delivery_days = input.delivery_days
+  if (input.expires_at) insertData.expires_at = input.expires_at
+
   const { data, error } = await supabase
     .from('offers')
-    .insert({
-      creator_id: user.id,
-      title: input.title.trim(),
-      description: input.description.trim(),
-      amount: input.amount,
-      currency: input.currency || 'USD',
-      creator_role: input.creator_role,
-      token,
-      status: 'pending',
-    })
+    .insert(insertData)
     .select()
     .single()
 
@@ -86,6 +107,50 @@ export async function createOffer(input: {
   revalidatePath('/dashboard')
   revalidatePath('/offers')
   return { data }
+}
+
+// ============================================================================
+// UPLOAD OFFER IMAGE
+// ============================================================================
+export async function uploadOfferImage(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+  if (userError || !user) {
+    return { error: 'Not authenticated' }
+  }
+
+  const file = formData.get('image') as File
+  if (!file) return { error: 'No file provided' }
+
+  // Validate
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+  if (!allowedTypes.includes(file.type)) {
+    return { error: 'Invalid file type. Use JPG, PNG, WebP, or GIF.' }
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    return { error: 'File too large. Maximum size is 5MB.' }
+  }
+
+  const ext = file.name.split('.').pop() || 'jpg'
+  const fileName = `${user.id}/${crypto.randomBytes(8).toString('hex')}.${ext}`
+
+  const { error: uploadError } = await supabase.storage
+    .from('offer-images')
+    .upload(fileName, file, {
+      contentType: file.type,
+      upsert: false,
+    })
+
+  if (uploadError) {
+    return { error: uploadError.message }
+  }
+
+  const { data: urlData } = supabase.storage
+    .from('offer-images')
+    .getPublicUrl(fileName)
+
+  return { data: { url: urlData.publicUrl } }
 }
 
 // ============================================================================
@@ -148,7 +213,8 @@ export async function getOfferByToken(token: string) {
     .from('offers')
     .select(`
       id, title, description, amount, currency, creator_role,
-      creator_id, token, status, expires_at, created_at
+      creator_id, token, status, expires_at, created_at,
+      image_urls, category, delivery_days
     `)
     .eq('token', token)
     .single()
@@ -158,10 +224,10 @@ export async function getOfferByToken(token: string) {
   }
 
   // Fetch creator profile (admin client bypasses cross-user RLS)
-  let creator: { full_name: string | null; email: string } = { full_name: null, email: 'Unknown' }
+  let creator: { full_name: string | null; email: string; avatar_url: string | null } = { full_name: null, email: 'Unknown', avatar_url: null }
   const { data: profile } = await admin
     .from('profiles')
-    .select('full_name, email')
+    .select('full_name, email, avatar_url')
     .eq('id', data.creator_id)
     .single()
 
