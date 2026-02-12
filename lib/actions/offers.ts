@@ -135,6 +135,13 @@ export async function uploadOfferImage(formData: FormData) {
   const ext = file.name.split('.').pop() || 'jpg'
   const fileName = `${user.id}/${crypto.randomBytes(8).toString('hex')}.${ext}`
 
+  // Ensure bucket exists (auto-create via admin if missing)
+  const admin = createAdminClient()
+  const { data: buckets } = await admin.storage.listBuckets()
+  if (!buckets?.find(b => b.id === 'offer-images')) {
+    await admin.storage.createBucket('offer-images', { public: true })
+  }
+
   const { error: uploadError } = await supabase.storage
     .from('offer-images')
     .upload(fileName, file, {
