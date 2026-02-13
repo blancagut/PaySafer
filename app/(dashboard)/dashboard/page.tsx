@@ -31,7 +31,7 @@ import { Button } from "@/components/ui/button"
 import { GlassCard, GlassStat, GlassContainer } from "@/components/glass"
 import { GlassBadge, statusBadgeMap, offerStatusBadgeMap } from "@/components/glass"
 import { CardCarousel } from "@/components/card-carousel"
-import { getTransactionStats, getUserTransactions } from "@/lib/actions/transactions"
+import { getTransactionStats, getUserTransactions, getVolumeChartData, getStatusDistribution, getTrendStats } from "@/lib/actions/transactions"
 import { getOfferStats, getMyOffers } from "@/lib/actions/offers"
 import { getProfile } from "@/lib/actions/profile"
 import { toast } from "sonner"
@@ -63,35 +63,6 @@ function timeAgo(dateStr: string) {
   return `${Math.floor(seconds / 86400)}d ago`
 }
 
-// Placeholder chart data (will be replaced by real analytics in Phase 5)
-// Use deterministic seed-like approach to avoid SSR/client hydration mismatch
-function generateVolumeData() {
-  const data = []
-  const now = new Date()
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(now)
-    d.setDate(d.getDate() - i)
-    // Deterministic pseudo-random based on day index
-    const seed = (i * 2654435761) >>> 0
-    data.push({
-      date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      inflow: (seed % 5000) + 1000,
-      outflow: ((seed * 3) % 4000) + 800,
-    })
-  }
-  return data
-}
-
-function generateStatusData() {
-  return [
-    { name: "Escrow", value: 12, fill: "hsl(200, 80%, 55%)" },
-    { name: "Delivered", value: 8, fill: "hsl(180, 70%, 45%)" },
-    { name: "Released", value: 24, fill: "hsl(160, 84%, 45%)" },
-    { name: "Disputed", value: 3, fill: "hsl(0, 72%, 55%)" },
-    { name: "Pending", value: 6, fill: "hsl(45, 90%, 55%)" },
-  ]
-}
-
 // Custom chart tooltip
 function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
@@ -120,24 +91,27 @@ export default function DashboardPage() {
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
   const [volumeData, setVolumeData] = useState<any[]>([])
   const [statusData, setStatusData] = useState<any[]>([])
+  const [trendStats, setTrendStats] = useState<{ activeEscrows: number; completed: number; disputes: number; totalVolume: number } | null>(null)
+  const [totalVolume, setTotalVolume] = useState(0)
   const [chartRange, setChartRange] = useState<"7d" | "30d" | "90d">("30d")
 
   // Only run on client to avoid SSR hydration mismatches
   useEffect(() => {
     setMounted(true)
-    setVolumeData(generateVolumeData())
-    setStatusData(generateStatusData())
   }, [])
 
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [profileRes, statsRes, offerStatsRes, txnRes, offersRes] = await Promise.all([
+      const [profileRes, statsRes, offerStatsRes, txnRes, offersRes, volumeRes, statusRes, trendsRes] = await Promise.all([
         getProfile(),
         getTransactionStats(),
         getOfferStats(),
         getUserTransactions(),
         getMyOffers({ pageSize: 5 }),
+        getVolumeChartData(chartRange === "7d" ? 7 : chartRange === "90d" ? 90 : 30),
+        getStatusDistribution(),
+        getTrendStats(),
       ])
 
       if (profileRes.data) setProfile(profileRes.data)
@@ -145,12 +119,18 @@ export default function DashboardPage() {
       if (offerStatsRes.data) setOfferStats(offerStatsRes.data)
       if (txnRes.data) setRecentTxns(txnRes.data.slice(0, 6))
       if (offersRes.data) setRecentOffers(offersRes.data)
+      if (volumeRes.data) setVolumeData(volumeRes.data)
+      if (statusRes.data) setStatusData(statusRes.data)
+      if (trendsRes.data) {
+        setTrendStats(trendsRes.data)
+        setTotalVolume(trendsRes.data.totalVolume ?? 0)
+      }
     } catch {
       toast.error("Failed to load dashboard data")
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [chartRange])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -228,14 +208,14 @@ export default function DashboardPage() {
           value={txnStats?.active ?? 0}
           icon={<Clock className="w-5 h-5" />}
           glowColor="blue"
-          trend={{ value: 12, label: "vs last month" }}
+          trend={trendStats ? { value: trendStats.activeEscrows, label: "vs last month" } : undefined}
         />
         <GlassStat
           label="Completed"
           value={txnStats?.completed ?? 0}
           icon={<CheckCircle2 className="w-5 h-5" />}
           glowColor="emerald"
-          trend={{ value: 8, label: "vs last month" }}
+          trend={trendStats ? { value: trendStats.completed, label: "vs last month" } : undefined}
         />
         <GlassStat
           label="Success Rate"
@@ -248,7 +228,7 @@ export default function DashboardPage() {
           value={txnStats?.disputes ?? 0}
           icon={<AlertTriangle className="w-5 h-5" />}
           glowColor="red"
-          trend={{ value: -25, label: "vs last month" }}
+          trend={trendStats ? { value: trendStats.disputes, label: "vs last month" } : undefined}
         />
         <GlassStat
           label="Pending Offers"
@@ -258,10 +238,9 @@ export default function DashboardPage() {
         />
         <GlassStat
           label="Total Volume"
-          value={formatCurrency(0)}
+          value={formatCurrency(totalVolume)}
           icon={<Wallet className="w-5 h-5" />}
           glowColor="purple"
-          trend={{ value: 15, label: "vs last month" }}
         />
       </div>
 

@@ -26,6 +26,14 @@ export type NotificationType =
   | 'p2p_request_declined'
   | 'p2p_request_cancelled'
   | 'wallet.topup'
+  // Payouts
+  | 'payout.cash_ready'
+  | 'payout.card_sent'
+  | 'payout.crypto_sent'
+  | 'payout.bank_sent'
+  | 'payout.requested'
+  | 'payout.completed'
+  | 'payout.failed'
   // Messages
   | 'message.received'
   | 'message.transaction'
@@ -46,6 +54,7 @@ export type NotificationReferenceType =
   | 'payment_request'
   | 'conversation'
   | 'wallet'
+  | 'payout'
   | 'system'
 
 export interface NotificationConfig {
@@ -227,6 +236,64 @@ export const NOTIFICATION_CONFIG: Record<NotificationType, NotificationConfig> =
     color: 'text-green-500',
   },
 
+  // ─── Payouts ───
+  'payout.cash_ready': {
+    priority: 'critical',
+    sendEmail: true,
+    sendPush: true,
+    preferenceKey: 'notify_transactions',
+    icon: 'Banknote',
+    color: 'text-green-500',
+  },
+  'payout.card_sent': {
+    priority: 'normal',
+    sendEmail: true,
+    sendPush: true,
+    preferenceKey: 'notify_transactions',
+    icon: 'CreditCard',
+    color: 'text-blue-500',
+  },
+  'payout.crypto_sent': {
+    priority: 'normal',
+    sendEmail: true,
+    sendPush: true,
+    preferenceKey: 'notify_transactions',
+    icon: 'Coins',
+    color: 'text-orange-500',
+  },
+  'payout.bank_sent': {
+    priority: 'normal',
+    sendEmail: true,
+    sendPush: true,
+    preferenceKey: 'notify_transactions',
+    icon: 'Building2',
+    color: 'text-purple-500',
+  },
+  'payout.requested': {
+    priority: 'normal',
+    sendEmail: false,
+    sendPush: true,
+    preferenceKey: 'notify_transactions',
+    icon: 'ArrowDownToLine',
+    color: 'text-blue-500',
+  },
+  'payout.completed': {
+    priority: 'critical',
+    sendEmail: true,
+    sendPush: true,
+    preferenceKey: 'notify_transactions',
+    icon: 'CheckCircle',
+    color: 'text-green-500',
+  },
+  'payout.failed': {
+    priority: 'critical',
+    sendEmail: true,
+    sendPush: true,
+    preferenceKey: 'notify_transactions',
+    icon: 'XCircle',
+    color: 'text-red-500',
+  },
+
   // ─── Messages ───
   'message.received': {
     priority: 'normal',
@@ -296,6 +363,8 @@ export function getNotificationHref(referenceType?: string | null, referenceId?:
       return `/messages/${referenceId}`
     case 'wallet':
       return `/wallet`
+    case 'payout':
+      return `/payouts`
     default:
       return '/notifications'
   }

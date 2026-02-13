@@ -74,11 +74,11 @@ function ScoreItem({ label, score, maxScore, icon: Icon, description }: {
 
 // ─── Achievement Badges ───
 const defaultAchievements = [
-  { badge: "first_transaction", title: "First Deal", icon: "🤝", description: "Completed your first transaction", unlocked: true },
+  { badge: "first_transaction", title: "First Deal", icon: "🤝", description: "Completed your first transaction", unlocked: false },
   { badge: "trusted_50", title: "Trusted User", icon: "⭐", description: "Reached 50 trust score", unlocked: false },
   { badge: "fast_responder", title: "Fast Responder", icon: "⚡", description: "Avg response under 1 hour", unlocked: false },
   { badge: "ten_completed", title: "Deal Maker", icon: "💎", description: "Completed 10 transactions", unlocked: false },
-  { badge: "zero_disputes", title: "Clean Record", icon: "🛡️", description: "Zero disputes after 5+ txns", unlocked: true },
+  { badge: "zero_disputes", title: "Clean Record", icon: "🛡️", description: "Zero disputes after 5+ txns", unlocked: false },
   { badge: "verified", title: "Verified", icon: "✅", description: "Completed KYC verification", unlocked: false },
   { badge: "five_vouches", title: "Community Star", icon: "🌟", description: "Received 5 vouches", unlocked: false },
   { badge: "year_member", title: "OG Member", icon: "👑", description: "Member for over 1 year", unlocked: false },
@@ -113,7 +113,7 @@ export default function TrustPage() {
           getTrustScore().catch(() => null),
           getAchievements().catch(() => []),
         ])
-        setTrustData(score || { total: 45, breakdown: { account_age: 5, transactions: 10, disputes: 15, response_time: 10, verification: 0, vouches: 5 }, completed_transactions: 5, dispute_count: 0, vouch_count: 5, account_age_months: 5 })
+        setTrustData(score || { total: 0, breakdown: { account_age: 0, transactions: 0, disputes: 0, response_time: 0, verification: 0, vouches: 0 }, completed_transactions: 0, dispute_count: 0, vouch_count: 0, account_age_months: 0 })
         setAchievements(achList)
       } catch { /* fallback */ }
       finally { setLoading(false) }

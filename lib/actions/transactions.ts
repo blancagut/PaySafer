@@ -258,6 +258,157 @@ export async function getTransactionStats() {
   return { data: stats }
 }
 
+// ─── Volume Chart Data (real aggregated data for dashboard) ───
+export async function getVolumeChartData(days: number = 30) {
+  const supabase = await createClient()
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError || !user) return { error: 'Not authenticated' }
+
+  const since = new Date()
+  since.setDate(since.getDate() - days)
+
+  const { data: transactions, error } = await supabase
+    .from('transactions')
+    .select('amount, currency, buyer_id, seller_id, created_at, status')
+    .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
+    .gte('created_at', since.toISOString())
+    .order('created_at', { ascending: true })
+
+  if (error) return { error: error.message }
+
+  // Build day-by-day map
+  const dayMap: Record<string, { inflow: number; outflow: number }> = {}
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    const key = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    dayMap[key] = { inflow: 0, outflow: 0 }
+  }
+
+  for (const txn of transactions || []) {
+    const key = new Date(txn.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    if (!dayMap[key]) continue
+    const amount = Number(txn.amount)
+    if (txn.buyer_id === user.id) {
+      dayMap[key].outflow += amount // Money sent out (buyer paying)
+    }
+    if (txn.seller_id === user.id) {
+      dayMap[key].inflow += amount // Money received (seller earning)
+    }
+  }
+
+  const data = Object.entries(dayMap).map(([date, vals]) => ({
+    date,
+    inflow: Math.round(vals.inflow * 100) / 100,
+    outflow: Math.round(vals.outflow * 100) / 100,
+  }))
+
+  return { data }
+}
+
+// ─── Status Distribution (real counts for bar chart) ───
+export async function getStatusDistribution() {
+  const supabase = await createClient()
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError || !user) return { error: 'Not authenticated' }
+
+  const { data: transactions, error } = await supabase
+    .from('transactions')
+    .select('status')
+    .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
+
+  if (error) return { error: error.message }
+
+  const statusMap: Record<string, number> = {}
+  for (const txn of transactions || []) {
+    statusMap[txn.status] = (statusMap[txn.status] || 0) + 1
+  }
+
+  const fillColors: Record<string, string> = {
+    in_escrow: 'hsl(200, 80%, 55%)',
+    delivered: 'hsl(180, 70%, 45%)',
+    released: 'hsl(160, 84%, 45%)',
+    dispute: 'hsl(0, 72%, 55%)',
+    awaiting_payment: 'hsl(45, 90%, 55%)',
+    cancelled: 'hsl(215, 15%, 45%)',
+    draft: 'hsl(215, 15%, 35%)',
+  }
+
+  const labelMap: Record<string, string> = {
+    in_escrow: 'Escrow',
+    delivered: 'Delivered',
+    released: 'Released',
+    dispute: 'Disputed',
+    awaiting_payment: 'Pending',
+    cancelled: 'Cancelled',
+    draft: 'Draft',
+  }
+
+  const data = Object.entries(statusMap)
+    .filter(([, count]) => count > 0)
+    .map(([status, value]) => ({
+      name: labelMap[status] || status,
+      value,
+      fill: fillColors[status] || 'hsl(215, 15%, 55%)',
+    }))
+    .sort((a, b) => b.value - a.value)
+
+  return { data }
+}
+
+// ─── Trend Stats (compare current month vs previous month) ───
+export async function getTrendStats() {
+  const supabase = await createClient()
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError || !user) return { error: 'Not authenticated' }
+
+  const now = new Date()
+  const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+  const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+
+  const { data: transactions, error } = await supabase
+    .from('transactions')
+    .select('status, amount, created_at, buyer_id, seller_id')
+    .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
+    .gte('created_at', startOfLastMonth.toISOString())
+
+  if (error) return { error: error.message }
+
+  const thisMonth = (transactions || []).filter(t => new Date(t.created_at) >= startOfThisMonth)
+  const lastMonth = (transactions || []).filter(t => {
+    const d = new Date(t.created_at)
+    return d >= startOfLastMonth && d < startOfThisMonth
+  })
+
+  function pctChange(current: number, previous: number) {
+    if (previous === 0) return current > 0 ? 100 : 0
+    return Math.round(((current - previous) / previous) * 100)
+  }
+
+  const activeStatuses = ['awaiting_payment', 'in_escrow', 'delivered']
+  const thisActive = thisMonth.filter(t => activeStatuses.includes(t.status)).length
+  const lastActive = lastMonth.filter(t => activeStatuses.includes(t.status)).length
+
+  const thisCompleted = thisMonth.filter(t => t.status === 'released').length
+  const lastCompleted = lastMonth.filter(t => t.status === 'released').length
+
+  const thisDisputes = thisMonth.filter(t => t.status === 'dispute').length
+  const lastDisputes = lastMonth.filter(t => t.status === 'dispute').length
+
+  // Total volume = sum of all transaction amounts the user is involved in
+  const allTxns = transactions || []
+  const totalVolume = allTxns.reduce((sum, t) => sum + Number(t.amount), 0)
+
+  return {
+    data: {
+      activeEscrows: pctChange(thisActive, lastActive),
+      completed: pctChange(thisCompleted, lastCompleted),
+      disputes: pctChange(thisDisputes, lastDisputes),
+      totalVolume,
+    }
+  }
+}
+
 // ============================================================================
 // ROLE-ENFORCED LIFECYCLE ACTIONS
 // ============================================================================
