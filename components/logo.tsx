@@ -1,7 +1,7 @@
 /**
  * CRITICAL BRAND RULE — PAYSAFER LOGO
  *
- * Single source of truth: /public/paysafer-logo.svg
+ * Single source of truth: /public/Paysaferlogo.png
  *
  * - Do NOT generate, redesign, recreate, simulate, or approximate the logo.
  * - Do NOT invent logo variants (dark, light, placeholder, default, demo, etc.).
@@ -16,7 +16,7 @@ import Image from "next/image"
 import Link from "next/link"
 
 /** The ONLY valid logo path. Never change or duplicate. */
-const LOGO_SRC = "/paysafer-logo.svg" as const
+const LOGO_SRC = "/Paysaferlogo.png" as const
 
 interface LogoProps {
   size?: "sm" | "md" | "lg" | "xl"

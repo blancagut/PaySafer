@@ -2,6 +2,7 @@
 
 import React from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 import {
   LayoutDashboard,
@@ -13,6 +14,7 @@ import {
   HelpCircle,
   Sparkles,
   Shield,
+  ShieldAlert,
   PanelLeftClose,
   PanelLeftOpen,
   BarChart3,
@@ -53,6 +55,7 @@ export const accountNavigation = [
   { name: "Messages", href: "/messages", icon: MessageCircle },
   { name: "Profile", href: "/profile", icon: User },
   { name: "Settings", href: "/settings", icon: Settings },
+  { name: "Compliance", href: "/compliance", icon: ShieldAlert },
   { name: "Help", href: "/help", icon: HelpCircle },
 ]
 
@@ -138,6 +141,7 @@ interface DashboardSidebarProps {
   collapsed: boolean
   onToggleCollapse: () => void
   mobile?: boolean
+  complianceAlertCount?: number
 }
 
 // ─── Sidebar Component ───
@@ -147,6 +151,7 @@ export function DashboardSidebar({
   collapsed,
   onToggleCollapse,
   mobile = false,
+  complianceAlertCount = 0,
 }: DashboardSidebarProps) {
   const pathname = usePathname()
   const isCollapsed = mobile ? false : collapsed
@@ -164,8 +169,15 @@ export function DashboardSidebar({
         )}
       >
         {isCollapsed ? (
-          <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
-            <span className="text-primary font-bold text-sm">P</span>
+          <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center overflow-hidden">
+            <Image
+              src="/paysaferfavicon.png"
+              alt="PaySafer"
+              width={20}
+              height={20}
+              className="object-contain"
+              unoptimized
+            />
           </div>
         ) : (
           <Logo size="sm" linkTo="/dashboard" />
@@ -247,17 +259,33 @@ export function DashboardSidebar({
                 // Admins only see Settings
                 return item.href === "/settings"
               }
-              // Regular users see all except Help is already filtered
+              // Regular users: show all except /help
               return item.href !== "/help"
             })
-            .map((item) => (
-            <NavLink
-              key={item.href}
-              item={item}
-              isActive={isActive(item.href)}
-              collapsed={isCollapsed}
-            />
-          ))}
+            .map((item) => {
+              const isCompliance = item.href === "/compliance"
+              const showAlert = isCompliance && complianceAlertCount > 0
+              return (
+                <div key={item.href} className="relative">
+                  <NavLink
+                    item={item}
+                    isActive={isActive(item.href)}
+                    collapsed={isCollapsed}
+                  />
+                  {showAlert && (
+                    <span
+                      className={cn(
+                        "absolute top-1.5 right-1.5 flex items-center justify-center rounded-full bg-red-500 text-white font-bold leading-none",
+                        isCollapsed ? "w-2 h-2" : "min-w-[16px] h-4 text-[9px] px-1"
+                      )}
+                    >
+                      {!isCollapsed && complianceAlertCount}
+                    </span>
+                  )}
+                </div>
+              )
+            })
+          }
         </div>
 
         {/* Platform (admin-only) */}

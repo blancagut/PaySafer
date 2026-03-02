@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, Suspense } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Eye, EyeOff, Check, Shield, ArrowRight, Lock, Zap, Globe } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -146,6 +147,17 @@ function RegisterPageInner() {
             </div>
 
             <div className="space-y-2 mb-8">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1">
+                <Image
+                  src="/paysaferfavicon.png"
+                  alt="PaySafer icon"
+                  width={16}
+                  height={16}
+                  className="rounded-sm"
+                  unoptimized
+                />
+                <span className="text-[11px] font-medium text-muted-foreground">Trusted onboarding</span>
+              </div>
               <h2 className="text-[26px] font-bold tracking-tight text-foreground">
                 Create your account
               </h2>

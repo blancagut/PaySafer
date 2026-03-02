@@ -4,6 +4,7 @@ import React from "react"
 
 import { useState } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { ArrowLeft, Mail, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -56,6 +57,17 @@ export default function ForgotPasswordPage() {
         <CardHeader className="space-y-1 pb-6">
           <div className="mb-4">
             <Logo size="md" />
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 w-fit">
+            <Image
+              src="/paysaferfavicon.png"
+              alt="PaySafer icon"
+              width={16}
+              height={16}
+              className="rounded-sm"
+              unoptimized
+            />
+            <span className="text-[11px] font-medium text-muted-foreground">Account recovery</span>
           </div>
           
           {!submitted ? (

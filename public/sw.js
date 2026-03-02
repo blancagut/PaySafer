@@ -7,9 +7,7 @@ const DYNAMIC_CACHE = CACHE_VERSION + '-dynamic'
 
 // Static assets to pre-cache on install
 const PRECACHE_URLS = [
-  '/dashboard',
-  '/wallet',
-  '/favicon.svg',
+  '/paysaferfavicon.png',
   '/manifest.json',
 ]
 
