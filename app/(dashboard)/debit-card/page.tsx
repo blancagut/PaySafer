@@ -38,27 +38,27 @@ const faqs = [
   {
     question: "What's the difference between Standard, Gold, and Platinum?",
     answer:
-      "Standard is free and includes essentials like worldwide spending, Apple/Google Pay, and instant alerts. Gold ($4.99/mo) adds 1% cashback, free ATM withdrawals, and no FX fees. Platinum ($14.99/mo) unlocks 3% cashback, airport lounge access, priority support, and premium purchase protection.",
+      "Standard is completely free with essentials like worldwide spending and Apple/Google Pay. Gold ($9.99 one-time) adds 1% cashback, free ATM withdrawals, and no FX fees. Platinum ($49.99 one-time) is a premium metal card with 3% cashback, airport lounges, and priority support. No monthly fees on any card.",
+  },
+  {
+    question: "Are there any recurring fees?",
+    answer:
+      "No. PaySafe cards have zero monthly or annual fees. Standard is free forever. Gold and Platinum have a one-time card fee — once you pay, the card and all its perks are yours to keep with no recurring charges.",
   },
   {
     question: "How do I fund my debit card?",
     answer:
-      "Simply top up from your PaySafe wallet balance. Funds are transferred instantly to your card and ready to spend. You can also set up auto top-up to maintain a minimum balance.",
-  },
-  {
-    question: "Are there any hidden fees?",
-    answer:
-      "No. The Standard card is completely free with no monthly fees. Gold and Platinum have transparent monthly subscriptions with no hidden charges. All domestic purchases are fee-free on every tier.",
+      "Top up instantly from your PaySafe wallet balance. Funds appear on your card in seconds. You can also set up auto top-up to maintain a minimum balance.",
   },
   {
     question: "What spending limits apply?",
     answer:
-      "Standard: $5,000/day. Gold: $10,000/day. Platinum: $25,000/day. ATM withdrawal limits vary by tier. You can request higher limits through the app after full verification.",
+      "Standard: $5,000/day. Gold: $15,000/day. Platinum: $50,000/day. ATM withdrawal limits vary by tier. Higher limits available after full verification.",
   },
   {
-    question: "Can I use the card for ATM withdrawals?",
+    question: "Can I upgrade my card later?",
     answer:
-      "Yes! Standard includes 1 free ATM withdrawal/month, Gold includes 3, and Platinum includes unlimited free withdrawals. Works at any Mastercard-compatible ATM worldwide.",
+      "Yes! Start with Standard for free and upgrade to Gold or Platinum anytime from the app. You only pay the one-time card fee for your new tier.",
   },
 ]
 
@@ -120,26 +120,21 @@ export default function DebitCardPage() {
         </GlassCard>
       </div>
 
-      {/* ─── Card Carousel with Perks ─── */}
+      {/* ─── Card Carousel ─── */}
       <div className="animate-fade-in-up" style={{ animationDelay: "200ms" }}>
         <DebitCardCarousel onCardSelect={handleCardSelect} />
       </div>
 
-      {/* ─── Compare Cards Strip ─── */}
+      {/* ─── Pricing Note ─── */}
       <div className="animate-fade-in-up" style={{ animationDelay: "300ms" }}>
         <GlassCard padding="md">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <Sparkles className="w-4 h-4 text-primary" />
-              <div>
-                <span className="text-sm font-semibold text-foreground">Not sure which card?</span>
-                <p className="text-xs text-muted-foreground">Start free, upgrade anytime</p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <GlassBadge variant="emerald" size="sm">Standard — Free</GlassBadge>
-              <GlassBadge variant="blue" size="sm">Gold — $4.99</GlassBadge>
-              <GlassBadge variant="purple" size="sm">Platinum — $14.99</GlassBadge>
+          <div className="flex items-center gap-3">
+            <Sparkles className="w-4 h-4 text-primary shrink-0" />
+            <div>
+              <span className="text-sm font-semibold text-foreground">No monthly fees, ever.</span>
+              <span className="text-sm text-muted-foreground ml-1.5">
+                Pay once for your card — all perks included forever. Start free, upgrade anytime.
+              </span>
             </div>
           </div>
         </GlassCard>
@@ -172,7 +167,7 @@ export default function DebitCardPage() {
         </GlassContainer>
       </div>
 
-      {/* ─── Geo-Restriction Dialog (on card tap) ─── */}
+      {/* ─── Geo-Restriction Dialog ─── */}
       <Dialog open={geoDialogOpen} onOpenChange={setGeoDialogOpen}>
         <DialogContent className="glass-card border-white/[0.10] max-w-md">
           <DialogHeader>
@@ -193,9 +188,7 @@ export default function DebitCardPage() {
                   <span className="text-foreground font-medium">United Arab Emirates</span>.
                 </>
               ) : (
-                <>
-                  PaySafe Debit Cards are currently only available for U.S. and UAE residents.
-                </>
+                <>PaySafe Debit Cards are currently only available for U.S. and UAE residents.</>
               )}
             </DialogDescription>
           </DialogHeader>
@@ -203,13 +196,13 @@ export default function DebitCardPage() {
           {/* Country flags */}
           <div className="flex items-center justify-center gap-8 py-5">
             <div className="flex flex-col items-center gap-2">
-              <div className="w-14 h-14 rounded-xl bg-blue-500/10 flex items-center justify-center text-3xl shadow-inner">
+              <div className="w-14 h-14 rounded-xl bg-blue-500/10 flex items-center justify-center text-3xl">
                 🇺🇸
               </div>
               <span className="text-xs text-muted-foreground font-medium">United States</span>
             </div>
             <div className="flex flex-col items-center gap-2">
-              <div className="w-14 h-14 rounded-xl bg-red-500/10 flex items-center justify-center text-3xl shadow-inner">
+              <div className="w-14 h-14 rounded-xl bg-red-500/10 flex items-center justify-center text-3xl">
                 🇦🇪
               </div>
               <span className="text-xs text-muted-foreground font-medium">UAE</span>
@@ -218,8 +211,7 @@ export default function DebitCardPage() {
 
           <div className="glass-card rounded-lg p-3 text-center">
             <p className="text-xs text-muted-foreground">
-              We&apos;re expanding to more countries soon. Join the waitlist and be the first to know when
-              PaySafe cards launch in your region.
+              We&apos;re expanding to more countries soon. Join the waitlist and be the first to know.
             </p>
           </div>
 
