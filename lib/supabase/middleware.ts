@@ -63,12 +63,11 @@ export async function updateSession(request: NextRequest) {
     return redirectWithCookies(url)
   }
 
-  // Redirect authenticated users away from auth pages
+  // Redirect authenticated users away from auth pages (but NOT the landing page)
   if (
     user &&
     (request.nextUrl.pathname.startsWith('/login') ||
-      request.nextUrl.pathname.startsWith('/register') ||
-      request.nextUrl.pathname === '/')
+      request.nextUrl.pathname.startsWith('/register'))
   ) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
