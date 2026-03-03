@@ -284,15 +284,18 @@ export default function BusinessPage() {
               <ul className="space-y-2 text-sm text-white/60">
                 <li><Link href="/business" className="hover:text-emerald-500">Business</Link></li>
                 <li><Link href="/developers" className="hover:text-emerald-500">Developers</Link></li>
-                <li><Link href="/register" className="hover:text-emerald-500">Get Started</Link></li>
+                <li><Link href="/security" className="hover:text-emerald-500">Security</Link></li>
+                <li><Link href="/status" className="hover:text-emerald-500">System Status</Link></li>
               </ul>
             </div>
             <div>
-              <h3 className="font-semibold mb-4 text-white">Resources</h3>
+              <h3 className="font-semibold mb-4 text-white">Company</h3>
               <ul className="space-y-2 text-sm text-white/60">
-                <li><Link href="/developers#api-reference" className="hover:text-emerald-500">API Reference</Link></li>
-                <li><Link href="/developers#sdks" className="hover:text-emerald-500">SDKs & Libraries</Link></li>
-                <li><Link href="/help" className="hover:text-emerald-500">Help Center</Link></li>
+                <li><Link href="/about" className="hover:text-emerald-500">About Us</Link></li>
+                <li><Link href="/blog" className="hover:text-emerald-500">Blog</Link></li>
+                <li><Link href="/careers" className="hover:text-emerald-500">Careers</Link></li>
+                <li><Link href="/press" className="hover:text-emerald-500">Press</Link></li>
+                <li><Link href="/contact" className="hover:text-emerald-500">Contact</Link></li>
               </ul>
             </div>
             <div>
@@ -300,6 +303,7 @@ export default function BusinessPage() {
               <ul className="space-y-2 text-sm text-white/60">
                 <li><Link href="/privacy" className="hover:text-emerald-500">Privacy Policy</Link></li>
                 <li><Link href="/terms" className="hover:text-emerald-500">Terms of Service</Link></li>
+                <li><Link href="/accessibility" className="hover:text-emerald-500">Accessibility</Link></li>
               </ul>
             </div>
           </div>
