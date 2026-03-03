@@ -192,7 +192,7 @@ export async function notifyUser(params: {
         .eq("id", params.userId)
         .single()
 
-      if (settings && settings[config.preferenceKey] === false) {
+      if (settings && (settings as Record<string, unknown>)[config.preferenceKey] === false) {
         // User has disabled this notification category — skip
         return { error: null }
       }
@@ -238,7 +238,7 @@ async function sendPushToUser(
     if (!vapidPublic || !vapidPrivate) return // VAPID keys not configured
 
     webpush.setVapidDetails(
-      "mailto:support@paysafe.app",
+      process.env.VAPID_EMAIL || "mailto:support@paysafer.site",
       vapidPublic,
       vapidPrivate
     )
@@ -317,7 +317,7 @@ async function sendEmailToUser(
     const resend = new Resend(apiKey)
 
     await resend.emails.send({
-      from: "PaySafe <notifications@paysafe.app>",
+      from: process.env.RESEND_FROM_EMAIL || "PaySafer <notifications@paysafer.site>",
       to: profile.email,
       subject: title,
       html: buildEmailHtml(title, message, profile.full_name || "there"),
@@ -337,11 +337,11 @@ function buildEmailHtml(title: string, message: string, name: string): string {
         <h2 style="font-size: 18px; font-weight: 600; color: #0f172a; margin: 0 0 8px 0;">${title}</h2>
         <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px 0;">Hi ${name},</p>
         <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px 0;">${message}</p>
-        <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://paysafe.app'}/dashboard" style="display: inline-block; background: #6366f1; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 500;">Open PaySafe</a>
+        <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://www.paysafer.site'}/dashboard" style="display: inline-block; background: #6366f1; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 500;">Open PaySafer</a>
       </div>
       <p style="font-size: 12px; color: #94a3b8; text-align: center; margin-top: 24px;">
         You're receiving this because you have email notifications enabled. 
-        <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://paysafe.app'}/settings" style="color: #6366f1;">Manage preferences</a>
+        <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://www.paysafer.site'}/settings" style="color: #6366f1;">Manage preferences</a>
       </p>
     </div>
   `

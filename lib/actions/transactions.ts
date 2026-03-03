@@ -5,6 +5,13 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { insertSystemMessage } from './transaction-messages'
 import { notifyTransactionStatusChange } from './notifications'
+import {
+  ACTIVE_TRANSACTION_STATUSES,
+  ALLOWED_TRANSACTION_TRANSITIONS,
+  normalizeTransactionStatus,
+  type TransactionStatus,
+  type TransactionStatusInput,
+} from '@/lib/transactions/status'
 
 // Lazy import to avoid circular dependency
 async function creditWallet(userId: string, amount: number, transactionId: string) {
@@ -24,14 +31,7 @@ async function creditWallet(userId: string, amount: number, transactionId: strin
   }
 }
 
-export type TransactionStatus = 
-  | 'draft'
-  | 'awaiting_payment'
-  | 'in_escrow'
-  | 'delivered'
-  | 'released'
-  | 'cancelled'
-  | 'dispute'
+export type { TransactionStatus } from '@/lib/transactions/status'
 
 export interface Transaction {
   id: string
@@ -161,7 +161,7 @@ export async function createTransaction(input: {
 // Update transaction status
 export async function updateTransactionStatus(
   id: string, 
-  status: TransactionStatus
+  status: TransactionStatusInput
 ) {
   const supabase = await createClient()
   
@@ -183,31 +183,31 @@ export async function updateTransactionStatus(
     return { error: 'Transaction not found or access denied' }
   }
 
-  // Validate status transitions
-  const validTransitions: Record<TransactionStatus, TransactionStatus[]> = {
-    draft: ['awaiting_payment', 'cancelled'],
-    awaiting_payment: ['in_escrow', 'cancelled'],
-    in_escrow: ['delivered', 'dispute', 'cancelled'],
-    delivered: ['released', 'dispute'],
-    released: [],
-    cancelled: [],
-    dispute: ['released', 'cancelled'],
+  const normalizedCurrentStatus = normalizeTransactionStatus(transaction.status)
+  const normalizedNextStatus = normalizeTransactionStatus(status)
+
+  if (!normalizedCurrentStatus) {
+    return { error: `Unknown current transaction status: ${transaction.status}` }
   }
 
-  if (!validTransitions[transaction.status].includes(status)) {
-    return { error: `Cannot transition from ${transaction.status} to ${status}` }
+  if (!normalizedNextStatus) {
+    return { error: `Unknown target transaction status: ${status}` }
+  }
+
+  if (!ALLOWED_TRANSACTION_TRANSITIONS[normalizedCurrentStatus].includes(normalizedNextStatus)) {
+    return { error: `Cannot transition from ${normalizedCurrentStatus} to ${normalizedNextStatus}` }
   }
 
   // Build update object with timestamps
-  const updateData: any = { status }
+  const updateData: any = { status: normalizedNextStatus }
   
-  if (status === 'in_escrow' && !transaction.paid_at) {
+  if (normalizedNextStatus === 'in_escrow' && !transaction.paid_at) {
     updateData.paid_at = new Date().toISOString()
   }
-  if (status === 'delivered' && !transaction.delivered_at) {
+  if (normalizedNextStatus === 'delivered' && !transaction.delivered_at) {
     updateData.delivered_at = new Date().toISOString()
   }
-  if (status === 'released' && !transaction.released_at) {
+  if (normalizedNextStatus === 'released' && !transaction.released_at) {
     updateData.released_at = new Date().toISOString()
   }
 
@@ -249,7 +249,7 @@ export async function getTransactionStats() {
   }
 
   const stats = {
-    active: transactions.filter(t => ['awaiting_payment', 'in_escrow', 'delivered'].includes(t.status)).length,
+    active: transactions.filter(t => ACTIVE_TRANSACTION_STATUSES.includes(t.status)).length,
     completed: transactions.filter(t => t.status === 'released').length,
     disputes: transactions.filter(t => t.status === 'dispute').length,
     total: transactions.length,

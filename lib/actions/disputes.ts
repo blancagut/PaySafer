@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { notifyDisputeUpdate } from './notifications'
+import { normalizeTransactionStatus } from '@/lib/transactions/status'
 
 export interface Dispute {
   id: string
@@ -112,10 +113,16 @@ export async function createDispute(input: {
     return { error: disputeError.message }
   }
 
-  // Update transaction status to dispute
+  // Update transaction status to canonical disputed state
+  const disputedStatus = normalizeTransactionStatus('disputed')
+
+  if (!disputedStatus) {
+    return { error: 'Failed to resolve canonical dispute status' }
+  }
+
   await supabase
     .from('transactions')
-    .update({ status: 'dispute' })
+    .update({ status: disputedStatus })
     .eq('id', input.transaction_id)
 
   // Notify the other party in the transaction

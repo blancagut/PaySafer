@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { notifyTransactionMessage } from './notifications'
+import { isTerminalTransactionStatus } from '@/lib/transactions/status'
 
 export interface TransactionMessage {
   id: string
@@ -69,7 +70,7 @@ export async function sendTransactionMessage(
   }
 
   // Don't allow messages on terminal transactions
-  if (['released', 'cancelled'].includes(txn.status)) {
+  if (isTerminalTransactionStatus(txn.status)) {
     return { error: 'This transaction is closed' }
   }
 

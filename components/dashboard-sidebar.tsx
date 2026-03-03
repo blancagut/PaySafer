@@ -26,6 +26,10 @@ import {
   Repeat,
   Award,
   CreditCard,
+  Building2,
+  Users,
+  ScrollText,
+  BadgeCheck,
 } from "lucide-react"
 import { Logo } from "@/components/logo"
 import { cn } from "@/lib/utils"
@@ -41,6 +45,9 @@ export const moneyNavigation = [
   { name: "Offers", href: "/offers", icon: FileText },
   { name: "Wallet", href: "/wallet", icon: Wallet },
   { name: "Debit Card", href: "/debit-card", icon: CreditCard, badge: "NEW" as const },
+  { name: "Bank Accounts", href: "/bank-accounts", icon: Building2 },
+  { name: "Recipients", href: "/recipients", icon: Users },
+  { name: "Statements", href: "/statements", icon: ScrollText },
   { name: "QR Pay", href: "/wallet/qr", icon: QrCode, badge: "NEW" as const },
   { name: "Recurring", href: "/wallet/recurring", icon: Repeat },
   { name: "Payouts", href: "/payouts", icon: Banknote },
@@ -56,6 +63,7 @@ export const servicesNavigation = [
 export const accountNavigation = [
   { name: "Messages", href: "/messages", icon: MessageCircle },
   { name: "Profile", href: "/profile", icon: User },
+  { name: "Verify", href: "/verify", icon: BadgeCheck },
   { name: "Settings", href: "/settings", icon: Settings },
   { name: "Compliance", href: "/compliance", icon: ShieldAlert },
   { name: "Help", href: "/help", icon: HelpCircle },

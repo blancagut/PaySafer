@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Check for explicit human escalation request
-    if (isHumanEscalationRequest(message)) {
+    if (await isHumanEscalationRequest(message)) {
       return NextResponse.json({
         response: "Of course! I'm connecting you with a human support agent. They'll be with you shortly.",
         confidence: 1,

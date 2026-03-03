@@ -74,7 +74,7 @@ function SendMoneyContent() {
       ])
       if (walletRes.data) {
         setBalance(Number(walletRes.data.balance))
-        setCurrency(walletRes.data.currency)
+        setCurrency(walletRes.data.currency as CurrencyCode)
       }
       if (contactsRes.data) setContacts(contactsRes.data)
       if (recentRes.data) setRecentRecipients(recentRes.data)

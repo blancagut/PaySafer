@@ -1475,7 +1475,7 @@ export default function PayoutsPage() {
                         <div>
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-semibold text-foreground">{m.label}</p>
-                            {m.is_default && <GlassBadge variant="primary" size="sm">Default</GlassBadge>}
+                            {m.is_default && <GlassBadge variant="blue" size="sm">Default</GlassBadge>}
                           </div>
                           {m.bank_name && <p className="text-xs text-muted-foreground mt-0.5">{m.bank_name}</p>}
                           {m.recipient_name && <p className="text-xs text-muted-foreground mt-0.5">{m.city}, {m.country}</p>}

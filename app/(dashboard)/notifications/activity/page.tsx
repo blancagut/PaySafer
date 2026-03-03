@@ -84,7 +84,7 @@ export default function ActivityFeedPage() {
   useEffect(() => {
     async function load() {
       try {
-        const data = await getActivityFeed(50)
+        const data = await getActivityFeed({ limit: 50 })
         setFeed(data?.length ? data : defaultFeed)
       } catch {
         setFeed(defaultFeed)

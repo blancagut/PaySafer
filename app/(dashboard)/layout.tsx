@@ -66,6 +66,7 @@ export default function DashboardLayout({
   const [latestNotif, setLatestNotif] = useState<Record<string, unknown> | null>(null)
   const [cmdOpen, setCmdOpen] = useState(false)
   const [notifSoundEnabled, setNotifSoundEnabled] = useState(true)
+  const [complianceAlertCount, setComplianceAlertCount] = useState(0)
 
   // Persist sidebar state
   useEffect(() => {
@@ -87,26 +88,31 @@ export default function DashboardLayout({
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user)
       if (user) {
-        supabase
-          .from("profiles").select("*").eq("id", user.id).single()
-          .then(({ data }) => setProfile(data))
-          .catch(() => {}) // Silently handle profile fetch errors
+        Promise.resolve(
+          supabase.from("profiles").select("*").eq("id", user.id).single()
+        ).then(({ data }) => setProfile(data)).catch(() => {})
 
         // Get unread notification count
-        supabase
-          .from("notifications").select("*", { count: "exact", head: true })
-          .eq("user_id", user.id).eq("read", false)
-          .then(({ count }) => setNotifCount(count ?? 0))
-          .catch(() => {}) // Silently handle notification fetch errors
+        Promise.resolve(
+          supabase.from("notifications").select("*", { count: "exact", head: true })
+            .eq("user_id", user.id).eq("read", false)
+        ).then(({ count }) => setNotifCount(count ?? 0)).catch(() => {})
 
         // Load notification sound preference
-        supabase
-          .from("user_settings").select("notify_sound")
-          .eq("id", user.id).single()
-          .then(({ data }) => {
-            if (data) setNotifSoundEnabled(data.notify_sound !== false)
-          })
-          .catch(() => {})
+        Promise.resolve(
+          supabase.from("user_settings").select("notify_sound")
+            .eq("id", user.id).single()
+        ).then(({ data }) => {
+          if (data) setNotifSoundEnabled(data.notify_sound !== false)
+        }).catch(() => {})
+
+        // Count open compliance (AML) requests
+        Promise.resolve(
+          supabase.from("aml_document_requests")
+            .select("*", { count: "exact", head: true })
+            .eq("requested_for_user_id", user.id)
+            .not("status", "in", '("approved","rejected")')
+        ).then(({ count }) => setComplianceAlertCount(count ?? 0)).catch(() => {})
 
         // Register service worker for push notifications
         if ("serviceWorker" in navigator) {
@@ -118,10 +124,9 @@ export default function DashboardLayout({
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
       if (session?.user) {
-        supabase
-          .from("profiles").select("*").eq("id", session.user.id).single()
-          .then(({ data }) => setProfile(data))
-          .catch(() => {})
+        Promise.resolve(
+          supabase.from("profiles").select("*").eq("id", session.user.id).single()
+        ).then(({ data }) => setProfile(data)).catch(() => {})
       } else {
         setProfile(null)
       }
@@ -197,6 +202,7 @@ export default function DashboardLayout({
           profile={profile}
           collapsed={collapsed}
           onToggleCollapse={toggleSidebar}
+          complianceAlertCount={complianceAlertCount}
         />
       </aside>
 
@@ -209,6 +215,7 @@ export default function DashboardLayout({
               collapsed={false}
               onToggleCollapse={toggleSidebar}
               mobile
+              complianceAlertCount={complianceAlertCount}
             />
           </div>
         </SheetContent>

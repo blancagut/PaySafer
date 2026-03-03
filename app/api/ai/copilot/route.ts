@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import OpenAI from "openai"
+import { getOpenAIClient } from "@/lib/ai/client"
 import { createClient } from "@/lib/supabase/server"
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 const SYSTEM_PROMPT = `You are SafeAI, the financial copilot for PaySafer — a modern escrow and P2P payment platform.
 You help users understand their finances, spending patterns, pending actions, and guide them through the platform.
@@ -58,6 +56,7 @@ User's current state:
 - Active offers: ${offersResult.data?.length || 0}
 `
 
+    const openai = getOpenAIClient()
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [

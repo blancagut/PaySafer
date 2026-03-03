@@ -229,7 +229,7 @@ function PendingRequestsCard({ requests, onAction }: { requests: PaymentRequest[
       <div className="flex items-center gap-2 mb-3">
         <Receipt className="w-4 h-4 text-amber-400" />
         <span className="text-sm font-semibold text-foreground">Pending Requests</span>
-        <GlassBadge variant="warning">{requests.length}</GlassBadge>
+        <GlassBadge variant="amber">{requests.length}</GlassBadge>
       </div>
       <div className="space-y-2">
         {requests.map(req => (

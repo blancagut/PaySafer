@@ -672,9 +672,9 @@ export function DealRoom({
                 <div className="border-t border-white/[0.06] pt-3">
                   <p className="text-[11px] uppercase tracking-wider text-muted-foreground/50 mb-1">Description</p>
                   <p className="text-foreground whitespace-pre-wrap">{transaction.description}</p>
-                  {transaction.metadata?.offer_description && (
+                  {transaction.metadata?.offer_description ? (
                     <p className="text-muted-foreground mt-1 whitespace-pre-wrap">{String(transaction.metadata.offer_description)}</p>
-                  )}
+                  ) : null}
                 </div>
               )}
             </div>

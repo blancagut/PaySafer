@@ -58,6 +58,7 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "sonner"
 import {
   BarChart,
@@ -83,13 +84,19 @@ import {
   getAdminRevenueMetrics,
   adminReleaseTransaction,
   adminRefundTransaction,
+  adminAntiMlConfiscate,
   adminResolveDispute,
   adminUpdateUserRole,
   adminCancelOffer,
   adminBanUser,
   adminUnbanUser,
+  adminGetAmlRequests,
+  adminApproveAmlRequest,
+  adminRejectAmlRequest,
   type TransactionStatus,
   type DisputeResolution,
+  type AmlDocumentType,
+  type AdminAmlRequestFilters,
   type AdminTransactionFilters,
   type AdminDisputeFilters,
   type AdminUserFilters,
@@ -141,7 +148,7 @@ function ChartTooltip({ active, payload, label }: any) {
 
 /* в”Ђв”Ђв”Ђ Tab Config в”Ђв”Ђв”Ђ */
 
-type AdminTab = "overview" | "revenue" | "transactions" | "disputes" | "users" | "offers" | "audit" | "config"
+type AdminTab = "overview" | "revenue" | "transactions" | "disputes" | "users" | "offers" | "audit" | "aml" | "config"
 
 type TabItem = { key: AdminTab; label: string; icon: React.ReactNode; warn?: boolean }
 type TabGroup = { group: string; tabs: TabItem[] }
@@ -166,8 +173,9 @@ const tabGroups: TabGroup[] = [
   {
     group: "System",
     tabs: [
-      { key: "audit",        label: "Audit Log",     icon: <Fingerprint className="w-4 h-4" /> },
-      { key: "config",       label: "Config",        icon: <Settings className="w-4 h-4" />, warn: true },
+      { key: "audit",  label: "Audit Log",  icon: <Fingerprint className="w-4 h-4" /> },
+      { key: "aml",    label: "AML Review", icon: <ShieldCheck className="w-4 h-4" /> },
+      { key: "config", label: "Config",     icon: <Settings className="w-4 h-4" />, warn: true },
     ],
   },
 ]
@@ -327,11 +335,26 @@ export default function AdminPage() {
   const [auditPagination, setAuditPagination] = useState({ page: 1, total: 0, totalPages: 0 })
   const [auditFilter, setAuditFilter] = useState<AdminAuditLogFilters>({ page: 1, pageSize: 25 })
 
+  const [amlRequests, setAmlRequests] = useState<any[]>([])
+  const [amlPagination, setAmlPagination] = useState({ page: 1, total: 0, totalPages: 0 })
+  const [amlFilter, setAmlFilter] = useState<AdminAmlRequestFilters>({ page: 1, pageSize: 20 })
+  const [amlRejectReason, setAmlRejectReason] = useState("")
+
   // dialogs
   const [actionDialog, setActionDialog] = useState<{ type: string; id: string; status?: string } | null>(null)
   const [actionReason, setActionReason] = useState("")
+  const [amlDocuments, setAmlDocuments] = useState<AmlDocumentType[]>([])
   const [actionLoading, setActionLoading] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  const amlDocumentOptions: { value: AmlDocumentType; label: string }[] = [
+    { value: "government_id", label: "Government ID" },
+    { value: "proof_of_address", label: "Proof of Address" },
+    { value: "bank_statement", label: "Bank Statement" },
+    { value: "source_of_funds", label: "Source of Funds" },
+    { value: "income_proof", label: "Income Proof" },
+    { value: "invoice_contract", label: "Invoice / Contract" },
+  ]
 
   /* в”Ђв”Ђв”Ђ Auth check в”Ђв”Ђв”Ђ */
   useEffect(() => {
@@ -370,6 +393,14 @@ export default function AdminPage() {
     if (res.data) { setAuditLogs(res.data); setAuditPagination(res.pagination!) }
   }, [auditFilter])
 
+  const loadAml = useCallback(async () => {
+    const res = await adminGetAmlRequests(amlFilter)
+    if (res.data) {
+      setAmlRequests(res.data)
+      setAmlPagination({ page: res.page, total: res.total, totalPages: res.totalPages })
+    }
+  }, [amlFilter])
+
   useEffect(() => {
     if (!authorized) return
     setLoading(true)
@@ -381,6 +412,7 @@ export default function AdminPage() {
   useEffect(() => { if (authorized && activeTab === "users")        loadUsers()        }, [authorized, activeTab, loadUsers])
   useEffect(() => { if (authorized && activeTab === "offers")       loadOffers()       }, [authorized, activeTab, loadOffers])
   useEffect(() => { if (authorized && activeTab === "audit")        loadAudit()        }, [authorized, activeTab, loadAudit])
+  useEffect(() => { if (authorized && activeTab === "aml")          loadAml()          }, [authorized, activeTab, loadAml])
 
   /* в”Ђв”Ђв”Ђ Admin Actions в”Ђв”Ђв”Ђ */
   const refreshAll = () => {
@@ -390,6 +422,7 @@ export default function AdminPage() {
     if (activeTab === "users") loadUsers()
     if (activeTab === "offers") loadOffers()
     if (activeTab === "audit") loadAudit()
+    if (activeTab === "aml") loadAml()
   }
 
   const handleRelease = async (txnId: string) => {
@@ -417,7 +450,7 @@ export default function AdminPage() {
     setActionLoading(true)
     const res = await adminResolveDispute(disputeId, resolution, actionReason)
     setActionLoading(false)
-    if (res.error) { toast.error(res.error); return }
+    if ("error" in res && res.error) { toast.error(res.error); return }
     const msgs: Record<string, string> = {
       release_to_seller: "Funds released to seller",
       refund_to_buyer: "Funds refunded to buyer",
@@ -428,6 +461,34 @@ export default function AdminPage() {
     toast.success(msgs[resolution] || "Dispute action completed")
     setActionDialog(null); setActionReason("")
     loadDisputes(); loadOverview(); loadUsers()
+  }
+
+  const handleAntiMl = async (txnId: string) => {
+    if (!actionReason.trim()) {
+      toast.error("Reason is required for Anti ML action")
+      return
+    }
+    if (amlDocuments.length === 0) {
+      toast.error("Select at least one required document")
+      return
+    }
+
+    setActionLoading(true)
+    const res = await adminAntiMlConfiscate(txnId, actionReason, amlDocuments)
+    setActionLoading(false)
+
+    if (res.error) {
+      toast.error(res.error)
+      return
+    }
+
+    toast.success("Anti ML executed: funds moved to PAYSAFERME LLC treasury")
+    setActionDialog(null)
+    setActionReason("")
+    setAmlDocuments([])
+    loadTransactions()
+    loadOverview()
+    loadAudit()
   }
 
   const handleRoleChange = async (userId: string, newRole: "user" | "admin") => {
@@ -463,6 +524,27 @@ export default function AdminPage() {
     toast.success("Offer cancelled")
     setActionDialog(null); setActionReason("")
     loadOffers()
+  }
+
+  const handleApproveAmlRequest = async (requestId: string) => {
+    setActionLoading(true)
+    const res = await adminApproveAmlRequest(requestId)
+    setActionLoading(false)
+    if (res.error) { toast.error(res.error); return }
+    toast.success("AML request approved — wallet unfrozen")
+    setActionDialog(null)
+    loadAml()
+  }
+
+  const handleRejectAmlRequest = async (requestId: string) => {
+    if (!amlRejectReason.trim()) { toast.error("Rejection reason is required"); return }
+    setActionLoading(true)
+    const res = await adminRejectAmlRequest(requestId, amlRejectReason)
+    setActionLoading(false)
+    if (res.error) { toast.error(res.error); return }
+    toast.success("AML request rejected — user notified")
+    setActionDialog(null); setAmlRejectReason("")
+    loadAml()
   }
 
   const copyId = (id: string) => {
@@ -915,6 +997,7 @@ export default function AdminPage() {
                   const cfg = statusBadgeMap[txn.status] || { label: txn.status, variant: "muted" as const }
                   const canRelease = ["delivered", "dispute"].includes(txn.status)
                   const canRefund = ["in_escrow", "dispute"].includes(txn.status)
+                  const canAntiMl = !["released", "cancelled"].includes(txn.status) && !txn.metadata?.anti_ml_confiscated
                   return (
                     <div key={txn.id} className="flex flex-col lg:grid lg:grid-cols-[1fr_auto_auto] gap-3 lg:gap-4 p-5 hover:bg-white/[0.015] transition-colors items-center">
                       <div className="min-w-0 w-full">
@@ -959,6 +1042,14 @@ export default function AdminPage() {
                             className="px-2.5 py-1.5 text-[11px] font-semibold rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/10 transition-all"
                           >
                             Refund
+                          </button>
+                        )}
+                        {canAntiMl && (
+                          <button
+                            onClick={() => setActionDialog({ type: "anti_ml", id: txn.id, status: txn.status })}
+                            className="px-2.5 py-1.5 text-[11px] font-semibold rounded-lg bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border border-amber-500/20 transition-all"
+                          >
+                            Anti ML
                           </button>
                         )}
                       </div>
@@ -1324,6 +1415,7 @@ export default function AdminPage() {
               { key: undefined, label: "All Events" },
               { key: "admin.transaction.release", label: "Releases" },
               { key: "admin.transaction.refund", label: "Refunds" },
+              { key: "admin.transaction.anti_ml_confiscate", label: "Anti ML" },
               { key: "admin.dispute.resolve", label: "Dispute Resolutions" },
               { key: "admin.user.promote", label: "Promotions" },
               { key: "admin.offer.cancel", label: "Offer Cancels" },
@@ -1376,7 +1468,141 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ CONFIG TAB в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */}
+      {/* ─────────────────── AML REVIEW TAB ─────────────────── */}
+      {activeTab === "aml" && (
+        <div className="space-y-5 animate-fade-in">
+          <SectionHeader
+            title="AML Document Review"
+            description="Review compliance documents submitted by flagged users"
+            count={amlPagination.total}
+          />
+
+          <FilterBar
+            options={[
+              { key: undefined as any, label: "All" },
+              { key: "requested",    label: "Pending" },
+              { key: "submitted",    label: "Submitted" },
+              { key: "under_review", label: "Under Review" },
+              { key: "approved",     label: "Approved" },
+              { key: "rejected",     label: "Rejected" },
+            ]}
+            value={amlFilter.status}
+            onChange={(s) => setAmlFilter({ ...amlFilter, status: s, page: 1 })}
+          />
+
+          <GlassCard padding="none">
+            {amlRequests.length === 0 ? (
+              <EmptyState icon={ShieldCheck} title="No AML requests found" description="Requests will appear here after Anti ML is triggered" />
+            ) : (
+              <div className="divide-y divide-white/[0.04]">
+                {amlRequests.map((req: any) => {
+                  const profile = Array.isArray(req.profiles) ? req.profiles[0] : req.profiles
+                  const txn = Array.isArray(req.transactions) ? req.transactions[0] : req.transactions
+                  const submittedCount = Array.isArray(req.submitted_files) ? req.submitted_files.length : 0
+                  const totalDocs = Array.isArray(req.requested_documents) ? req.requested_documents.length : 0
+                  const isPending = req.status === "requested" || req.status === "submitted" || req.status === "under_review"
+
+                  const statusColors: Record<string, string> = {
+                    requested:    "text-red-400 bg-red-500/10 border-red-500/20",
+                    submitted:    "text-amber-400 bg-amber-500/10 border-amber-500/20",
+                    under_review: "text-amber-400 bg-amber-500/10 border-amber-500/20",
+                    approved:     "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+                    rejected:     "text-red-400 bg-red-500/10 border-red-500/20",
+                  }
+
+                  return (
+                    <div key={req.id} className="p-5 hover:bg-white/[0.015] transition-colors">
+                      <div className="flex items-start gap-4">
+                        {/* Avatar */}
+                        <div className="w-9 h-9 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+                          <ShieldCheck className="w-4 h-4 text-amber-400" />
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[13px] font-semibold text-foreground">
+                              {profile?.full_name || profile?.email || "Unknown user"}
+                            </span>
+                            {profile?.email && profile?.full_name && (
+                              <span className="text-[11px] text-muted-foreground">{profile.email}</span>
+                            )}
+                            <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md border ${statusColors[req.status] || "text-muted-foreground bg-white/[0.04] border-white/[0.08]"}`}>
+                              {req.status.replace("_", " ")}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3 mt-1 flex-wrap text-[11px] text-muted-foreground">
+                            {txn && (
+                              <span>
+                                Transaction:{" "}
+                                <span className="font-mono text-foreground/70">{txn.id?.slice(0, 8)}</span>
+                                {" · "}
+                                <span className="font-medium text-foreground/80">{txn.currency} {Number(txn.amount).toFixed(2)}</span>
+                              </span>
+                            )}
+                            <span>Documents: <span className="text-foreground/70 font-medium">{submittedCount}/{totalDocs}</span></span>
+                            <span>{timeAgo(req.created_at)}</span>
+                          </div>
+
+                          <p className="text-[11px] text-muted-foreground mt-1.5 line-clamp-1">
+                            <span className="font-medium text-foreground/70">Reason:</span> {req.reason}
+                          </p>
+
+                          {/* Requested doc pills */}
+                          {Array.isArray(req.requested_documents) && req.requested_documents.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {(req.requested_documents as string[]).map((doc) => {
+                                const uploaded = Array.isArray(req.submitted_files) &&
+                                  req.submitted_files.some((f: any) => f.document_type === doc)
+                                return (
+                                  <span
+                                    key={doc}
+                                    className={`text-[10px] px-2 py-0.5 rounded-md border ${
+                                      uploaded
+                                        ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
+                                        : "bg-white/[0.04] text-muted-foreground border-white/[0.06]"
+                                    }`}
+                                  >
+                                    {doc.replace(/_/g, " ")}
+                                  </span>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        {isPending && (
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={() => setActionDialog({ type: "aml_approve", id: req.id })}
+                              className="px-2.5 py-1.5 text-[11px] font-semibold rounded-lg bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/20 transition-all"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => setActionDialog({ type: "aml_reject", id: req.id })}
+                              className="px-2.5 py-1.5 text-[11px] font-semibold rounded-lg bg-red-500/15 text-red-300 hover:bg-red-500/25 border border-red-500/20 transition-all"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <div className="px-5 pb-4">
+              <Pagination page={amlPagination.page} totalPages={amlPagination.totalPages} onPage={(p) => setAmlFilter({ ...amlFilter, page: p })} />
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ─────────────────── CONFIG TAB ─────────────────── */}
       {activeTab === "config" && (
         <div className="space-y-6 animate-fade-in">
           <SectionHeader title="Configuration" description="Platform-wide settings &amp; system health" />
@@ -1469,12 +1695,15 @@ export default function AdminPage() {
       )}
 
       {/* в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ ACTION DIALOG в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ */}
-      <Dialog open={!!actionDialog} onOpenChange={() => { setActionDialog(null); setActionReason("") }}>
+      <Dialog open={!!actionDialog} onOpenChange={() => { setActionDialog(null); setActionReason(""); setAmlDocuments([]); setAmlRejectReason("") }}>
         <DialogContent className="bg-[hsl(222,47%,8%)] border-white/[0.08] max-w-md rounded-2xl">
           <DialogHeader className="space-y-2">
             <DialogTitle className="text-[18px] font-bold tracking-tight text-foreground">
               {actionDialog?.type === "release"              && "Release Transaction"}
               {actionDialog?.type === "refund"               && "Refund Transaction"}
+              {actionDialog?.type === "anti_ml"              && "Anti ML Confiscation"}
+              {actionDialog?.type === "aml_approve"          && "Approve AML Request"}
+              {actionDialog?.type === "aml_reject"           && "Reject AML Request"}
               {actionDialog?.type === "resolve_release"      && "Release Funds to Seller"}
               {actionDialog?.type === "resolve_refund"       && "Refund Funds to Buyer"}
               {actionDialog?.type === "resolve_hold"         && "Hold Funds in Platform"}
@@ -1487,38 +1716,88 @@ export default function AdminPage() {
               {actionDialog?.type === "resolve_hold"         && "Funds will stay frozen in the platform. No money moves until you make a final decision."}
               {actionDialog?.type === "resolve_ban_both"     && "Both buyer AND seller will be banned. Funds remain frozen. Use for suspected money laundering or fraud."}
               {actionDialog?.type === "resolve_authorities"  && "Both parties will be banned and funds frozen. This flags the case for law enforcement review. This is the nuclear option."}
+              {actionDialog?.type === "anti_ml"              && "Funds will be confiscated to PAYSAFERME LLC treasury and compliance emails requesting documents will be sent."}
+              {actionDialog?.type === "aml_approve"          && "The user's compliance documents are accepted. Their wallet will be unfrozen automatically."}
+              {actionDialog?.type === "aml_reject"           && "The submission is not acceptable. The user will be notified with your reason and asked to resubmit. Their wallet remains frozen."}
               {actionDialog?.type === "ban_user"             && "This user will be immediately banned from the platform. They will be signed out and unable to access their account."}
-              {!["resolve_hold", "resolve_ban_both", "resolve_authorities", "ban_user"].includes(actionDialog?.type || "") && "This action is irreversible and will be recorded in the audit trail."}
+              {!["resolve_hold", "resolve_ban_both", "resolve_authorities", "ban_user", "anti_ml", "aml_approve", "aml_reject"].includes(actionDialog?.type || "") && "This action is irreversible and will be recorded in the audit trail."}
             </DialogDescription>
           </DialogHeader>
 
           {/* Severity indicator for dangerous actions */}
-          {["resolve_ban_both", "resolve_authorities"].includes(actionDialog?.type || "") && (
+          {["resolve_ban_both", "resolve_authorities", "anti_ml"].includes(actionDialog?.type || "") && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/15">
               <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
               <p className="text-[11px] text-red-400 font-medium">
                 {actionDialog?.type === "resolve_authorities"
                   ? "Nuclear option вЂ” involves law enforcement. Make sure you have evidence."
-                  : "High severity вЂ” both parties will lose platform access."}
+                  : actionDialog?.type === "anti_ml"
+                    ? "High severity вЂ” funds are confiscated to PAYSAFERME LLC treasury."
+                    : "High severity вЂ” both parties will lose platform access."}
               </p>
             </div>
           )}
 
-          <div className="space-y-2.5">
-            <Label className="text-[13px] font-semibold text-foreground">
-              Reason <span className="text-muted-foreground font-normal">(required)</span>
-            </Label>
-            <Textarea
-              value={actionReason}
-              onChange={(e) => setActionReason(e.target.value)}
-              placeholder={
-                actionDialog?.type === "resolve_authorities"
-                  ? "Describe suspected violation, evidence, and relevant transaction IDs..."
-                  : "Describe the reason for this action..."
-              }
-              className="bg-white/[0.03] border-white/[0.08] focus:border-white/[0.15] min-h-[100px] text-[13px] placeholder:text-muted-foreground/50 rounded-xl resize-none"
-            />
-          </div>
+          {actionDialog?.type === "anti_ml" && (
+            <div className="space-y-2.5">
+              <Label className="text-[13px] font-semibold text-foreground">
+                Required Documents <span className="text-muted-foreground font-normal">(select one or more)</span>
+              </Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
+                {amlDocumentOptions.map((doc) => {
+                  const checked = amlDocuments.includes(doc.value)
+                  return (
+                    <label key={doc.value} className="flex items-center gap-2.5 text-[12px] text-foreground/90 cursor-pointer">
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(isChecked) => {
+                          setAmlDocuments((prev) => {
+                            if (isChecked) return prev.includes(doc.value) ? prev : [...prev, doc.value]
+                            return prev.filter((item) => item !== doc.value)
+                          })
+                        }}
+                      />
+                      <span>{doc.label}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* AML reject reason input */}
+          {actionDialog?.type === "aml_reject" && (
+            <div className="space-y-2.5">
+              <Label className="text-[13px] font-semibold text-foreground">
+                Rejection Reason <span className="text-muted-foreground font-normal">(required)</span>
+              </Label>
+              <Textarea
+                value={amlRejectReason}
+                onChange={(e) => setAmlRejectReason(e.target.value)}
+                placeholder="Explain why the document submission is not acceptable and what the user must resubmit..."
+                className="bg-white/[0.03] border-white/[0.08] focus:border-white/[0.15] min-h-[100px] text-[13px] placeholder:text-muted-foreground/50 rounded-xl resize-none"
+              />
+            </div>
+          )}
+
+          {/* Standard reason textarea (not for aml_approve / aml_reject) */}
+          {actionDialog?.type !== "aml_approve" && actionDialog?.type !== "aml_reject" && (
+            <div className="space-y-2.5">
+              <Label className="text-[13px] font-semibold text-foreground">
+                Reason <span className="text-muted-foreground font-normal">(required)</span>
+              </Label>
+              <Textarea
+                value={actionReason}
+                onChange={(e) => setActionReason(e.target.value)}
+                placeholder={
+                  actionDialog?.type === "resolve_authorities"
+                    ? "Describe suspected violation, evidence, and relevant transaction IDs..."
+                    : "Describe the reason for this action..."
+                }
+                className="bg-white/[0.03] border-white/[0.08] focus:border-white/[0.15] min-h-[100px] text-[13px] placeholder:text-muted-foreground/50 rounded-xl resize-none"
+              />
+            </div>
+          )}
 
           <DialogFooter className="gap-2 pt-2">
             <Button
@@ -1529,11 +1808,17 @@ export default function AdminPage() {
               Cancel
             </Button>
             <Button
-              disabled={actionLoading || !actionReason.trim()}
+              disabled={actionLoading
+                || (actionDialog?.type === "aml_reject" ? !amlRejectReason.trim() : actionDialog?.type !== "aml_approve" && !actionReason.trim())
+                || (actionDialog?.type === 'anti_ml' && amlDocuments.length === 0)
+              }
               onClick={() => {
                 if (!actionDialog) return
                 if (actionDialog.type === "release")              handleRelease(actionDialog.id)
                 if (actionDialog.type === "refund")               handleRefund(actionDialog.id)
+                if (actionDialog.type === "anti_ml")              handleAntiMl(actionDialog.id)
+                if (actionDialog.type === "aml_approve")          handleApproveAmlRequest(actionDialog.id)
+                if (actionDialog.type === "aml_reject")           handleRejectAmlRequest(actionDialog.id)
                 if (actionDialog.type === "resolve_release")      handleResolveDispute(actionDialog.id, "release_to_seller")
                 if (actionDialog.type === "resolve_refund")       handleResolveDispute(actionDialog.id, "refund_to_buyer")
                 if (actionDialog.type === "resolve_hold")         handleResolveDispute(actionDialog.id, "hold_funds")
@@ -1543,7 +1828,13 @@ export default function AdminPage() {
                 if (actionDialog.type === "ban_user")             handleBanUser(actionDialog.id)
               }}
               className={`text-[13px] font-semibold transition-all ${
-                ["resolve_refund", "resolve_ban_both", "resolve_authorities", "cancel_offer", "ban_user", "refund"].includes(actionDialog?.type || "")
+                actionDialog?.type === "anti_ml"
+                  ? "bg-amber-600 hover:bg-amber-500 text-black border-amber-600"
+                  : actionDialog?.type === "aml_approve"
+                  ? "bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-600"
+                  : actionDialog?.type === "aml_reject"
+                  ? "bg-red-600 hover:bg-red-500 text-white border-red-600"
+                  : ["resolve_refund", "resolve_ban_both", "resolve_authorities", "cancel_offer", "ban_user", "refund"].includes(actionDialog?.type || "")
                   ? "bg-red-600 hover:bg-red-500 text-white border-red-600"
                   : actionDialog?.type === "resolve_hold"
                     ? "bg-amber-600 hover:bg-amber-500 text-white border-amber-600"
@@ -1552,8 +1843,11 @@ export default function AdminPage() {
             >
               {actionLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
               {actionDialog?.type === "resolve_authorities" ? "Escalate" :
+               actionDialog?.type === "anti_ml"            ? "Confiscate" :
                actionDialog?.type === "resolve_ban_both"   ? "Ban & Freeze" :
                actionDialog?.type === "ban_user"           ? "Ban User" :
+               actionDialog?.type === "aml_approve"        ? "Approve & Unfreeze" :
+               actionDialog?.type === "aml_reject"         ? "Reject" :
                "Confirm"}
             </Button>
           </DialogFooter>

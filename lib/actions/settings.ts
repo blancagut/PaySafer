@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { ACTIVE_TRANSACTION_STATUSES } from '@/lib/transactions/status'
 
 // ─── Types ───
 
@@ -251,7 +252,7 @@ export async function deleteAccount(): Promise<{ success?: boolean; error?: stri
     .from('transactions')
     .select('id')
     .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
-    .in('status', ['awaiting_payment', 'in_escrow', 'delivered', 'dispute'])
+    .in('status', [...ACTIVE_TRANSACTION_STATUSES])
     .limit(1)
 
   if (activeTx && activeTx.length > 0) {
