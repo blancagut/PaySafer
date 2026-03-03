@@ -46,18 +46,19 @@ export default function LandingPage() {
 
       {/* Section 1 — Image Slider */}
       <section className="relative w-full overflow-hidden bg-[#0A0F1A]">
-        <div className="relative w-full" style={{ aspectRatio: "12/5" }}>
+        <div className="relative w-full aspect-[16/9] md:aspect-[21/9]">
           {slides.map((slide, i) => (
             <div
               key={i}
-              className="absolute inset-0 transition-opacity duration-700 ease-in-out"
+              className="absolute inset-0 transition-opacity duration-700 ease-in-out bg-[#0A0F1A]"
               style={{ opacity: i === current ? 1 : 0 }}
             >
               <Image
                 src={slide.src}
                 alt={slide.alt}
                 fill
-                className="object-cover"
+                className="object-contain"
+                sizes="100vw"
                 priority={i === 0}
               />
             </div>
