@@ -56,6 +56,8 @@ export async function updateSession(request: NextRequest) {
     !request.nextUrl.pathname.startsWith('/auth/callback') &&
     !request.nextUrl.pathname.startsWith('/offer/') &&
     !request.nextUrl.pathname.startsWith('/pay/') &&
+    !request.nextUrl.pathname.startsWith('/business') &&
+    !request.nextUrl.pathname.startsWith('/developers') &&
     request.nextUrl.pathname !== '/'
   ) {
     const url = request.nextUrl.clone()

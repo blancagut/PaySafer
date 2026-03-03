@@ -266,6 +266,8 @@ export default function LandingPage() {
               <h3 className="font-semibold mb-4 text-white">Product</h3>
               <ul className="space-y-2 text-sm text-white/60">
                 <li><Link href="/register" className="hover:text-emerald-500">Get Started</Link></li>
+                <li><Link href="/business" className="hover:text-emerald-500">Business</Link></li>
+                <li><Link href="/developers" className="hover:text-emerald-500">Developers</Link></li>
                 <li><Link href="/services" className="hover:text-emerald-500">Services</Link></li>
                 <li><Link href="/trust" className="hover:text-emerald-500">Trust & Safety</Link></li>
               </ul>
