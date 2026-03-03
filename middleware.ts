@@ -40,6 +40,11 @@ export async function middleware(request: NextRequest) {
       const { success, reset } = aiLimiter.check(`ai:${ip}`, 10)
       if (!success) return rateLimitResponse(reset)
     }
+    // Crypto price polling: moderate limit (30/min)
+    else if (pathname.startsWith('/api/crypto')) {
+      const { success, reset } = apiLimiter.check(`crypto:${ip}`, 30)
+      if (!success) return rateLimitResponse(reset)
+    }
     // Webhooks: skip rate limiting (Stripe has own protections)
     else if (pathname.startsWith('/api/webhooks')) {
       // No rate limiting for webhook endpoints

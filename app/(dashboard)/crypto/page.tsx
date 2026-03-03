@@ -1,11 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import {
   Bitcoin,
   ArrowUpRight,
   ArrowDownLeft,
-  ArrowLeftRight,
   TrendingUp,
   TrendingDown,
   Loader2,
@@ -14,8 +13,7 @@ import {
   Info,
   ChevronRight,
   Clock,
-  Star,
-  Minus,
+  AlertTriangle,
 } from "lucide-react"
 import { GlassCard } from "@/components/glass"
 import { GlassBadge } from "@/components/glass"
@@ -28,127 +26,217 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import {
+  getCryptoHoldings,
+  getCryptoTradeHistory,
+  executeCryptoBuy,
+  executeCryptoSell,
+} from "@/lib/actions/crypto"
+import type { CryptoPrice, CryptoHolding, CryptoTrade } from "@/lib/binance/types"
+import { SUPPORTED_TRADING_PAIRS } from "@/lib/binance/types"
 
-// ─── Crypto Assets ───
+// ─── Asset config (colors/icons for display) ───
 
-interface CryptoAsset {
-  id: string
+const ASSET_META: Record<string, { color: string; icon: string; name: string }> = {
+  BTC:  { color: "bg-orange-500", icon: "₿", name: "Bitcoin" },
+  ETH:  { color: "bg-indigo-500", icon: "Ξ", name: "Ethereum" },
+  SOL:  { color: "bg-purple-500", icon: "◎", name: "Solana" },
+  BNB:  { color: "bg-yellow-500", icon: "B", name: "BNB" },
+  XRP:  { color: "bg-blue-500",   icon: "X", name: "XRP" },
+  ADA:  { color: "bg-blue-600",   icon: "₳", name: "Cardano" },
+  AVAX: { color: "bg-red-500",    icon: "A", name: "Avalanche" },
+  USDT: { color: "bg-green-500",  icon: "₮", name: "Tether" },
+  USDC: { color: "bg-blue-400",   icon: "$", name: "USD Coin" },
+}
+
+interface DisplayAsset {
   symbol: string
   name: string
   price: number
   change24h: number
   holdings: number
+  avgBuyPrice: number
   color: string
   icon: string
 }
 
-const mockAssets: CryptoAsset[] = [
-  { id: "btc", symbol: "BTC", name: "Bitcoin", price: 94285.40, change24h: 2.34, holdings: 0.0125, color: "bg-orange-500", icon: "₿" },
-  { id: "eth", symbol: "ETH", name: "Ethereum", price: 3245.80, change24h: -1.12, holdings: 0.85, color: "bg-indigo-500", icon: "Ξ" },
-  { id: "usdt", symbol: "USDT", name: "Tether", price: 1.00, change24h: 0.01, holdings: 500.00, color: "bg-green-500", icon: "₮" },
-  { id: "sol", symbol: "SOL", name: "Solana", price: 178.22, change24h: 5.67, holdings: 3.5, color: "bg-purple-500", icon: "◎" },
-  { id: "bnb", symbol: "BNB", name: "BNB", price: 612.30, change24h: 0.85, holdings: 0, color: "bg-yellow-500", icon: "B" },
-  { id: "xrp", symbol: "XRP", name: "XRP", price: 2.48, change24h: -0.32, holdings: 0, color: "bg-blue-500", icon: "X" },
-  { id: "ada", symbol: "ADA", name: "Cardano", price: 0.98, change24h: 3.21, holdings: 0, color: "bg-blue-600", icon: "₳" },
-  { id: "avax", symbol: "AVAX", name: "Avalanche", price: 42.10, change24h: -2.45, holdings: 0, color: "bg-red-500", icon: "A" },
-]
-
-interface TradeHistory {
-  id: string
-  type: "buy" | "sell"
-  symbol: string
-  amount: number
-  price: number
-  total: number
-  date: string
-}
-
-const mockHistory: TradeHistory[] = [
-  { id: "t1", type: "buy", symbol: "BTC", amount: 0.005, price: 93200, total: 466.00, date: "Mar 1, 2026" },
-  { id: "t2", type: "buy", symbol: "ETH", amount: 0.25, price: 3198, total: 799.50, date: "Feb 28, 2026" },
-  { id: "t3", type: "sell", symbol: "SOL", amount: 5.0, price: 172.50, total: 862.50, date: "Feb 25, 2026" },
-  { id: "t4", type: "buy", symbol: "USDT", amount: 500, price: 1.00, total: 500.00, date: "Feb 20, 2026" },
-  { id: "t5", type: "buy", symbol: "SOL", amount: 8.5, price: 165.30, total: 1405.05, date: "Feb 15, 2026" },
-]
-
 type Tab = "market" | "portfolio" | "history"
 type TradeType = "buy" | "sell"
 
+const FEE_RATE = 0.005 // 0.5%
+
 export default function CryptoPage() {
-  const [assets, setAssets] = useState<CryptoAsset[]>(mockAssets)
+  // ─── State ───
+  const [assets, setAssets] = useState<DisplayAsset[]>([])
+  const [trades, setTrades] = useState<CryptoTrade[]>([])
   const [tab, setTab] = useState<Tab>("market")
   const [showTrade, setShowTrade] = useState<string | null>(null)
   const [tradeType, setTradeType] = useState<TradeType>("buy")
   const [tradeAmount, setTradeAmount] = useState("")
   const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [confirmStep, setConfirmStep] = useState(false)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // ─── Data fetching ───
+
+  const fetchPrices = useCallback(async () => {
+    try {
+      const res = await fetch("/api/crypto/prices")
+      if (!res.ok) return
+      const { prices } = (await res.json()) as { prices: CryptoPrice[] }
+      if (!prices || prices.length === 0) return
+
+      setAssets((prev) => {
+        const holdingsMap = new Map(prev.map((a) => [a.symbol, { holdings: a.holdings, avgBuyPrice: a.avgBuyPrice }]))
+        const all: DisplayAsset[] = []
+
+        for (const p of prices) {
+          const meta = ASSET_META[p.symbol] || { color: "bg-gray-500", icon: "?", name: p.symbol }
+          const h = holdingsMap.get(p.symbol)
+          all.push({
+            symbol: p.symbol,
+            name: meta.name,
+            price: p.price,
+            change24h: p.change24h,
+            holdings: h?.holdings ?? 0,
+            avgBuyPrice: h?.avgBuyPrice ?? 0,
+            color: meta.color,
+            icon: meta.icon,
+          })
+        }
+
+        all.sort((a, b) => {
+          if (a.holdings > 0 && b.holdings === 0) return -1
+          if (a.holdings === 0 && b.holdings > 0) return 1
+          const order = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "AVAX", "USDT", "USDC"]
+          return order.indexOf(a.symbol) - order.indexOf(b.symbol)
+        })
+
+        return all
+      })
+
+      setLastUpdate(new Date())
+    } catch (err) {
+      console.error("Failed to fetch prices:", err)
+    }
+  }, [])
+
+  const fetchHoldings = useCallback(async () => {
+    try {
+      const result = await getCryptoHoldings()
+      if (result.data) {
+        setAssets((prev) =>
+          prev.map((a) => {
+            const holding = result.data!.find((h: CryptoHolding) => h.symbol === a.symbol)
+            return holding
+              ? { ...a, holdings: holding.amount, avgBuyPrice: holding.avgBuyPrice }
+              : { ...a, holdings: 0, avgBuyPrice: 0 }
+          })
+        )
+      }
+    } catch (err) {
+      console.error("Failed to fetch holdings:", err)
+    }
+  }, [])
+
+  const fetchTrades = useCallback(async () => {
+    try {
+      const result = await getCryptoTradeHistory({ limit: 20 })
+      if (result.data) setTrades(result.data)
+    } catch (err) {
+      console.error("Failed to fetch trades:", err)
+    }
+  }, [])
+
+  // ─── Initial load ───
+  useEffect(() => {
+    async function init() {
+      await fetchPrices()
+      await Promise.all([fetchHoldings(), fetchTrades()])
+      setInitialLoading(false)
+    }
+    init()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ─── Price polling every 10s ───
+  useEffect(() => {
+    pollRef.current = setInterval(fetchPrices, 10_000)
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  }, [fetchPrices])
+
+  // ─── Computed ───
   const portfolio = assets.filter((a) => a.holdings > 0)
   const portfolioValue = portfolio.reduce((sum, a) => sum + a.holdings * a.price, 0)
+  const tradableAssets = assets.filter((a) => SUPPORTED_TRADING_PAIRS[a.symbol])
+
+  // ─── Handlers ───
 
   const handleRefresh = async () => {
     setRefreshing(true)
-    await new Promise((r) => setTimeout(r, 1200))
-    // Simulate slight price changes
-    setAssets(assets.map((a) => ({
-      ...a,
-      price: a.price * (1 + (Math.random() - 0.5) * 0.004),
-      change24h: a.change24h + (Math.random() - 0.5) * 0.5,
-    })))
+    await fetchPrices()
+    await fetchHoldings()
     toast.success("Prices updated")
     setRefreshing(false)
   }
 
   const handleTrade = async () => {
     const amount = parseFloat(tradeAmount)
-    if (!amount || amount <= 0) {
-      toast.error("Enter a valid amount")
-      return
-    }
-    setLoading(true)
-    await new Promise((r) => setTimeout(r, 1500))
-    const asset = assets.find((a) => a.id === showTrade)!
-    const coinAmount = amount / asset.price
+    if (!amount || amount <= 0) { toast.error("Enter a valid amount"); return }
+    const asset = assets.find((a) => a.symbol === showTrade)
+    if (!asset) return
 
-    if (tradeType === "buy") {
-      setAssets(assets.map((a) =>
-        a.id === showTrade ? { ...a, holdings: a.holdings + coinAmount } : a
-      ))
-      toast.success(`Bought ${coinAmount.toFixed(6)} ${asset.symbol}`, {
-        description: `$${amount.toFixed(2)} debited from wallet`,
-      })
-    } else {
-      if (coinAmount > asset.holdings) {
-        toast.error(`Insufficient ${asset.symbol} balance`)
-        setLoading(false)
-        return
+    // Show confirmation step first
+    if (!confirmStep) { setConfirmStep(true); return }
+
+    setLoading(true)
+    try {
+      if (tradeType === "buy") {
+        const result = await executeCryptoBuy({ symbol: asset.symbol, amountUsd: amount })
+        if (result.error) { toast.error(result.error); setLoading(false); return }
+        toast.success(`Bought ${result.data!.cryptoAmount.toFixed(6)} ${asset.symbol}`, {
+          description: `$${result.data!.quoteAmount.toFixed(2)} debited (fee: $${result.data!.feeAmount.toFixed(2)})`,
+        })
+      } else {
+        const cryptoAmount = amount / asset.price
+        const result = await executeCryptoSell({ symbol: asset.symbol, amountCrypto: cryptoAmount })
+        if (result.error) { toast.error(result.error); setLoading(false); return }
+        toast.success(`Sold ${result.data!.cryptoAmount.toFixed(6)} ${asset.symbol}`, {
+          description: `$${(result.data!.quoteAmount - result.data!.feeAmount).toFixed(2)} credited (fee: $${result.data!.feeAmount.toFixed(2)})`,
+        })
       }
-      setAssets(assets.map((a) =>
-        a.id === showTrade ? { ...a, holdings: a.holdings - coinAmount } : a
-      ))
-      toast.success(`Sold ${coinAmount.toFixed(6)} ${asset.symbol}`, {
-        description: `$${amount.toFixed(2)} credited to wallet`,
-      })
-    }
-    setShowTrade(null)
-    setTradeAmount("")
-    setLoading(false)
+      await Promise.all([fetchPrices(), fetchHoldings(), fetchTrades()])
+      setShowTrade(null); setTradeAmount(""); setConfirmStep(false)
+    } catch { toast.error("Trade failed. Please try again.") }
+    finally { setLoading(false) }
   }
+
+  const closeTradeDialog = () => { setShowTrade(null); setTradeAmount(""); setConfirmStep(false) }
+
+  const timeSinceUpdate = lastUpdate ? Math.round((Date.now() - lastUpdate.getTime()) / 1000) : null
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "market", label: "Market" },
     { key: "portfolio", label: "Portfolio" },
     { key: "history", label: "History" },
   ]
+
+  // ─── Loading state ───
+  if (initialLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground">Loading crypto markets...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-8 pb-20 md:pb-0">
@@ -168,16 +256,18 @@ export default function CryptoPage() {
               </p>
             </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="text-sm"
-          >
-            <RefreshCw className={cn("w-4 h-4 mr-1.5", refreshing && "animate-spin")} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            {timeSinceUpdate !== null && (
+              <span className="text-[10px] text-muted-foreground/50 hidden sm:block">
+                <Clock className="w-3 h-3 inline mr-0.5" />
+                {timeSinceUpdate < 5 ? "just now" : `${timeSinceUpdate}s ago`}
+              </span>
+            )}
+            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing} className="text-sm">
+              <RefreshCw className={cn("w-4 h-4 mr-1.5", refreshing && "animate-spin")} />
+              Refresh
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -195,7 +285,7 @@ export default function CryptoPage() {
               <span className="text-xs text-muted-foreground block mb-1">{portfolio.length} assets</span>
               <div className="flex items-center gap-1">
                 <Wallet className="w-3.5 h-3.5 text-primary" />
-                <span className="text-xs text-primary font-medium">Wallet connected</span>
+                <span className="text-xs text-primary font-medium">Live prices</span>
               </div>
             </div>
           </div>
@@ -221,50 +311,81 @@ export default function CryptoPage() {
       {/* Market Tab */}
       {tab === "market" && (
         <div className="animate-fade-in-up space-y-2" style={{ animationDelay: "180ms" }}>
-          {assets.map((asset) => (
-            <GlassCard
-              key={asset.id}
-              padding="none"
-              className="hover:bg-white/[0.06] transition-colors cursor-pointer"
-              onClick={() => { setShowTrade(asset.id); setTradeType("buy") }}
-            >
-              <div className="flex items-center gap-4 p-4">
-                <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white text-lg font-bold", asset.color)}>
-                  {asset.icon}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-foreground">{asset.name}</span>
-                    <span className="text-xs text-muted-foreground">{asset.symbol}</span>
+          {assets.length === 0 ? (
+            <div className="text-center py-16">
+              <AlertTriangle className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">Unable to load market data</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">Check your connection and try refreshing</p>
+            </div>
+          ) : (
+            tradableAssets.map((asset) => (
+              <GlassCard
+                key={asset.symbol}
+                padding="none"
+                className="hover:bg-white/[0.06] transition-colors cursor-pointer"
+                onClick={() => { setShowTrade(asset.symbol); setTradeType("buy"); setConfirmStep(false) }}
+              >
+                <div className="flex items-center gap-4 p-4">
+                  <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white text-lg font-bold", asset.color)}>
+                    {asset.icon}
                   </div>
-                  {asset.holdings > 0 && (
-                    <span className="text-xs text-muted-foreground">
-                      {asset.holdings.toFixed(asset.holdings < 1 ? 6 : 2)} {asset.symbol} · ${(asset.holdings * asset.price).toFixed(2)}
-                    </span>
-                  )}
-                </div>
-
-                <div className="text-right shrink-0">
-                  <span className="text-sm font-mono text-foreground">
-                    ${asset.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                  <div className="flex items-center justify-end gap-0.5 mt-0.5">
-                    {asset.change24h >= 0 ? (
-                      <TrendingUp className="w-3 h-3 text-emerald-400" />
-                    ) : (
-                      <TrendingDown className="w-3 h-3 text-red-400" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">{asset.name}</span>
+                      <span className="text-xs text-muted-foreground">{asset.symbol}</span>
+                    </div>
+                    {asset.holdings > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        {asset.holdings.toFixed(asset.holdings < 1 ? 6 : 2)} {asset.symbol} · ${(asset.holdings * asset.price).toFixed(2)}
+                      </span>
                     )}
-                    <span className={cn("text-xs font-mono", asset.change24h >= 0 ? "text-emerald-400" : "text-red-400")}>
-                      {asset.change24h >= 0 ? "+" : ""}{asset.change24h.toFixed(2)}%
-                    </span>
                   </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-sm font-mono text-foreground">
+                      ${asset.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                    <div className="flex items-center justify-end gap-0.5 mt-0.5">
+                      {asset.change24h >= 0 ? (
+                        <TrendingUp className="w-3 h-3 text-emerald-400" />
+                      ) : (
+                        <TrendingDown className="w-3 h-3 text-red-400" />
+                      )}
+                      <span className={cn("text-xs font-mono", asset.change24h >= 0 ? "text-emerald-400" : "text-red-400")}>
+                        {asset.change24h >= 0 ? "+" : ""}{asset.change24h.toFixed(2)}%
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground/40 shrink-0" />
                 </div>
+              </GlassCard>
+            ))
+          )}
 
-                <ChevronRight className="w-4 h-4 text-muted-foreground/40 shrink-0" />
-              </div>
-            </GlassCard>
-          ))}
+          {/* Stablecoins section */}
+          {assets.filter((a) => a.symbol === "USDT" || a.symbol === "USDC").length > 0 && (
+            <div className="pt-4">
+              <p className="text-xs text-muted-foreground/50 uppercase tracking-wider mb-2 px-1">Stablecoins</p>
+              {assets.filter((a) => a.symbol === "USDT" || a.symbol === "USDC").map((asset) => (
+                <GlassCard key={asset.symbol} padding="none" className="mb-2">
+                  <div className="flex items-center gap-4 p-4">
+                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white text-lg font-bold", asset.color)}>
+                      {asset.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-foreground">{asset.name}</span>
+                        <span className="text-xs text-muted-foreground">{asset.symbol}</span>
+                      </div>
+                      {asset.holdings > 0 && (
+                        <span className="text-xs text-muted-foreground">{asset.holdings.toFixed(2)} {asset.symbol}</span>
+                      )}
+                    </div>
+                    <span className="text-sm font-mono text-foreground">$1.00</span>
+                  </div>
+                </GlassCard>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -279,11 +400,11 @@ export default function CryptoPage() {
             </div>
           ) : (
             <>
-              {/* Allocation */}
+              {/* Allocation bar */}
               <div className="flex gap-1 h-3 rounded-full overflow-hidden">
                 {portfolio.map((a) => (
                   <div
-                    key={a.id}
+                    key={a.symbol}
                     className={cn("h-full transition-all", a.color)}
                     style={{ width: `${((a.holdings * a.price) / portfolioValue) * 100}%` }}
                     title={`${a.symbol}: ${(((a.holdings * a.price) / portfolioValue) * 100).toFixed(1)}%`}
@@ -295,8 +416,9 @@ export default function CryptoPage() {
                 {portfolio.map((asset) => {
                   const value = asset.holdings * asset.price
                   const pct = (value / portfolioValue) * 100
+                  const pnl = asset.avgBuyPrice > 0 ? ((asset.price - asset.avgBuyPrice) / asset.avgBuyPrice) * 100 : 0
                   return (
-                    <GlassCard key={asset.id} padding="md" className="hover:bg-white/[0.06] transition-colors">
+                    <GlassCard key={asset.symbol} padding="md" className="hover:bg-white/[0.06] transition-colors">
                       <div className="flex items-center gap-4">
                         <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white text-lg font-bold", asset.color)}>
                           {asset.icon}
@@ -305,6 +427,11 @@ export default function CryptoPage() {
                           <span className="text-sm font-medium text-foreground">{asset.name}</span>
                           <p className="text-xs text-muted-foreground">
                             {asset.holdings.toFixed(asset.holdings < 1 ? 6 : 2)} {asset.symbol}
+                            {asset.avgBuyPrice > 0 && (
+                              <span className={cn("ml-2", pnl >= 0 ? "text-emerald-400" : "text-red-400")}>
+                                {pnl >= 0 ? "+" : ""}{pnl.toFixed(1)}%
+                              </span>
+                            )}
                           </p>
                         </div>
                         <div className="text-right">
@@ -314,14 +441,14 @@ export default function CryptoPage() {
                         <div className="flex gap-1 shrink-0">
                           <Button
                             size="sm"
-                            onClick={() => { setShowTrade(asset.id); setTradeType("buy") }}
+                            onClick={() => { setShowTrade(asset.symbol); setTradeType("buy"); setConfirmStep(false) }}
                             className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs h-7 px-2"
                           >
                             Buy
                           </Button>
                           <Button
                             size="sm"
-                            onClick={() => { setShowTrade(asset.id); setTradeType("sell") }}
+                            onClick={() => { setShowTrade(asset.symbol); setTradeType("sell"); setConfirmStep(false) }}
                             className="bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs h-7 px-2"
                           >
                             Sell
@@ -340,35 +467,51 @@ export default function CryptoPage() {
       {/* History Tab */}
       {tab === "history" && (
         <div className="animate-fade-in-up space-y-2" style={{ animationDelay: "180ms" }}>
-          {mockHistory.map((trade) => (
-            <GlassCard key={trade.id} padding="md" className="hover:bg-white/[0.06] transition-colors">
-              <div className="flex items-center gap-4">
-                <div className={cn(
-                  "w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
-                  trade.type === "buy" ? "bg-emerald-500/10" : "bg-red-500/10"
-                )}>
-                  {trade.type === "buy"
-                    ? <ArrowDownLeft className="w-4 h-4 text-emerald-400" />
-                    : <ArrowUpRight className="w-4 h-4 text-red-400" />
-                  }
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-foreground capitalize">{trade.type} {trade.symbol}</span>
-                    <GlassBadge variant={trade.type === "buy" ? "emerald" : "red"} size="sm">
-                      {trade.type === "buy" ? "Buy" : "Sell"}
-                    </GlassBadge>
+          {trades.length === 0 ? (
+            <div className="text-center py-16">
+              <Clock className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">No trade history yet</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">Your buy and sell transactions will appear here</p>
+            </div>
+          ) : (
+            trades.map((trade) => (
+              <GlassCard key={trade.id} padding="md" className="hover:bg-white/[0.06] transition-colors">
+                <div className="flex items-center gap-4">
+                  <div className={cn(
+                    "w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
+                    trade.side === "buy" ? "bg-emerald-500/10" : "bg-red-500/10"
+                  )}>
+                    {trade.side === "buy"
+                      ? <ArrowDownLeft className="w-4 h-4 text-emerald-400" />
+                      : <ArrowUpRight className="w-4 h-4 text-red-400" />
+                    }
                   </div>
-                  <span className="text-xs text-muted-foreground">
-                    {trade.amount} {trade.symbol} @ ${trade.price.toLocaleString()} · {trade.date}
-                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-foreground capitalize">{trade.side} {trade.symbol}</span>
+                      <GlassBadge variant={trade.side === "buy" ? "emerald" : "red"} size="sm">
+                        {trade.side === "buy" ? "Buy" : "Sell"}
+                      </GlassBadge>
+                      {trade.status !== "completed" && (
+                        <GlassBadge variant="amber" size="sm">{trade.status}</GlassBadge>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {trade.cryptoAmount.toFixed(6)} {trade.symbol} @ ${trade.pricePerCoin.toLocaleString()} · {new Date(trade.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className={cn("text-sm font-mono", trade.side === "buy" ? "text-foreground" : "text-emerald-400")}>
+                      {trade.side === "buy" ? "-" : "+"}${trade.quoteAmount.toFixed(2)}
+                    </span>
+                    {trade.feeAmount > 0 && (
+                      <p className="text-[10px] text-muted-foreground/50">fee: ${trade.feeAmount.toFixed(2)}</p>
+                    )}
+                  </div>
                 </div>
-                <span className={cn("text-sm font-mono", trade.type === "buy" ? "text-foreground" : "text-emerald-400")}>
-                  {trade.type === "buy" ? "-" : "+"}${trade.total.toFixed(2)}
-                </span>
-              </div>
-            </GlassCard>
-          ))}
+              </GlassCard>
+            ))
+          )}
         </div>
       )}
 
@@ -377,18 +520,20 @@ export default function CryptoPage() {
         <Info className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
         <p className="text-xs text-muted-foreground/70">
           Cryptocurrency is volatile and high-risk. Past performance doesn&apos;t guarantee future returns.
-          Not FDIC insured. Trade responsibly.
+          Not FDIC insured. Trade responsibly. Prices powered by Binance.
         </p>
       </div>
 
       {/* Trade Dialog */}
-      <Dialog open={!!showTrade} onOpenChange={() => { setShowTrade(null); setTradeAmount("") }}>
+      <Dialog open={!!showTrade} onOpenChange={() => closeTradeDialog()}>
         <DialogContent className="bg-[#0F1B2D] border-white/[0.08]">
           {showTrade && (() => {
-            const asset = assets.find((a) => a.id === showTrade)
+            const asset = assets.find((a) => a.symbol === showTrade)
             if (!asset) return null
             const usdAmount = parseFloat(tradeAmount) || 0
             const coinAmount = usdAmount / asset.price
+            const fee = usdAmount * FEE_RATE
+            const totalCost = tradeType === "buy" ? usdAmount + fee : usdAmount - fee
 
             return (
               <>
@@ -401,6 +546,7 @@ export default function CryptoPage() {
                       <DialogTitle className="text-foreground">{tradeType === "buy" ? "Buy" : "Sell"} {asset.name}</DialogTitle>
                       <DialogDescription>
                         1 {asset.symbol} = ${asset.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        <span className="text-[10px] text-muted-foreground/40 ml-1">live</span>
                       </DialogDescription>
                     </div>
                   </div>
@@ -409,13 +555,13 @@ export default function CryptoPage() {
                 {/* Toggle Buy/Sell */}
                 <div className="flex gap-1 p-0.5 bg-white/[0.03] border border-white/[0.06] rounded-lg">
                   <button
-                    onClick={() => setTradeType("buy")}
+                    onClick={() => { setTradeType("buy"); setConfirmStep(false) }}
                     className={cn("flex-1 py-2 rounded-md text-sm font-medium transition-all", tradeType === "buy" ? "bg-emerald-500/20 text-emerald-400" : "text-muted-foreground")}
                   >
                     Buy
                   </button>
                   <button
-                    onClick={() => setTradeType("sell")}
+                    onClick={() => { setTradeType("sell"); setConfirmStep(false) }}
                     className={cn("flex-1 py-2 rounded-md text-sm font-medium transition-all", tradeType === "sell" ? "bg-red-500/20 text-red-400" : "text-muted-foreground")}
                   >
                     Sell
@@ -423,29 +569,83 @@ export default function CryptoPage() {
                 </div>
 
                 <div className="space-y-4 py-2">
-                  <div>
-                    <label className="text-xs text-muted-foreground font-medium mb-1.5 block">Amount (USD)</label>
-                    <input
-                      type="number"
-                      placeholder="0.00"
-                      value={tradeAmount}
-                      onChange={(e) => setTradeAmount(e.target.value)}
-                      className="w-full bg-white/[0.04] border border-white/[0.10] rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                  </div>
-                  {usdAmount > 0 && (
-                    <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">You {tradeType === "buy" ? "receive" : "sell"}</span>
-                        <span className="text-foreground font-mono">{coinAmount.toFixed(6)} {asset.symbol}</span>
+                  {!confirmStep ? (
+                    <>
+                      <div>
+                        <label className="text-xs text-muted-foreground font-medium mb-1.5 block">Amount (USD)</label>
+                        <input
+                          type="number"
+                          placeholder="0.00"
+                          value={tradeAmount}
+                          onChange={(e) => setTradeAmount(e.target.value)}
+                          min={10}
+                          max={10000}
+                          step="0.01"
+                          className="w-full bg-white/[0.04] border border-white/[0.10] rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                        <p className="text-[10px] text-muted-foreground/40 mt-1">Min $10 · Max $10,000</p>
                       </div>
-                      <div className="flex justify-between text-sm mt-1">
-                        <span className="text-muted-foreground">Fee (0.5%)</span>
-                        <span className="text-foreground font-mono">${(usdAmount * 0.005).toFixed(2)}</span>
+                      {usdAmount > 0 && (
+                        <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">You {tradeType === "buy" ? "receive" : "sell"}</span>
+                            <span className="text-foreground font-mono">~{coinAmount.toFixed(6)} {asset.symbol}</span>
+                          </div>
+                          <div className="flex justify-between text-sm mt-1">
+                            <span className="text-muted-foreground">Fee (0.5%)</span>
+                            <span className="text-foreground font-mono">${fee.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm mt-1 pt-1 border-t border-white/[0.06]">
+                            <span className="text-muted-foreground font-medium">
+                              {tradeType === "buy" ? "Total cost" : "You receive"}
+                            </span>
+                            <span className="text-foreground font-mono font-medium">${totalCost.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    /* Confirmation step */
+                    <div className="space-y-3">
+                      <div className="p-4 rounded-lg bg-white/[0.03] border border-amber-500/20">
+                        <div className="flex items-center gap-2 mb-3">
+                          <AlertTriangle className="w-4 h-4 text-amber-400" />
+                          <span className="text-sm font-medium text-amber-400">Confirm Trade</span>
+                        </div>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Action</span>
+                            <span className={cn("font-medium", tradeType === "buy" ? "text-emerald-400" : "text-red-400")}>
+                              {tradeType === "buy" ? "Buy" : "Sell"} {asset.symbol}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Amount</span>
+                            <span className="text-foreground font-mono">~{coinAmount.toFixed(6)} {asset.symbol}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Price</span>
+                            <span className="text-foreground font-mono">${asset.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Fee</span>
+                            <span className="text-foreground font-mono">${fee.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between pt-2 border-t border-white/[0.06]">
+                            <span className="text-muted-foreground font-medium">
+                              {tradeType === "buy" ? "Total cost" : "You receive"}
+                            </span>
+                            <span className="text-foreground font-mono font-bold">${totalCost.toFixed(2)}</span>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground/50 mt-3">
+                          Final amounts may vary slightly due to market movement. Order executes at market price.
+                        </p>
                       </div>
                     </div>
                   )}
-                  {tradeType === "sell" && (
+
+                  {tradeType === "sell" && !confirmStep && (
                     <p className="text-xs text-muted-foreground">
                       Available: {asset.holdings.toFixed(asset.holdings < 1 ? 6 : 2)} {asset.symbol} (${(asset.holdings * asset.price).toFixed(2)})
                     </p>
@@ -453,18 +653,30 @@ export default function CryptoPage() {
                 </div>
 
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => { setShowTrade(null); setTradeAmount("") }}>Cancel</Button>
-                  <Button
-                    onClick={handleTrade}
-                    disabled={loading}
-                    className={cn(
-                      "text-white",
-                      tradeType === "buy" ? "bg-emerald-500 hover:bg-emerald-600" : "bg-red-500 hover:bg-red-600"
-                    )}
-                  >
-                    {loading && <Loader2 className="w-4 h-4 animate-spin mr-1.5" />}
-                    {tradeType === "buy" ? "Buy" : "Sell"} {asset.symbol}
-                  </Button>
+                  {confirmStep ? (
+                    <>
+                      <Button variant="outline" onClick={() => setConfirmStep(false)}>Back</Button>
+                      <Button
+                        onClick={handleTrade}
+                        disabled={loading}
+                        className={cn("text-white", tradeType === "buy" ? "bg-emerald-500 hover:bg-emerald-600" : "bg-red-500 hover:bg-red-600")}
+                      >
+                        {loading && <Loader2 className="w-4 h-4 animate-spin mr-1.5" />}
+                        {loading ? "Executing..." : `Confirm ${tradeType === "buy" ? "Buy" : "Sell"}`}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button variant="outline" onClick={closeTradeDialog}>Cancel</Button>
+                      <Button
+                        onClick={handleTrade}
+                        disabled={!tradeAmount || parseFloat(tradeAmount) < 10}
+                        className={cn("text-white", tradeType === "buy" ? "bg-emerald-500 hover:bg-emerald-600" : "bg-red-500 hover:bg-red-600")}
+                      >
+                        Review {tradeType === "buy" ? "Buy" : "Sell"}
+                      </Button>
+                    </>
+                  )}
                 </DialogFooter>
               </>
             )

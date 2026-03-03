@@ -92,7 +92,7 @@ export const accountNavigation = [
   { name: "Messages", href: "/messages", icon: MessageCircle },
   { name: "Profile", href: "/profile", icon: User },
   { name: "Verify", href: "/verify", icon: BadgeCheck },
-  { name: "Security", href: "/security", icon: ShieldCheck },
+  { name: "Security", href: "/account-security", icon: ShieldCheck },
   { name: "Notifications", href: "/settings/notifications", icon: Bell },
   { name: "Settings", href: "/settings", icon: Settings },
   { name: "Compliance", href: "/compliance", icon: ShieldAlert },
