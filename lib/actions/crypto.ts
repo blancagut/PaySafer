@@ -32,7 +32,10 @@ export async function getCryptoPrices(): Promise<{ data?: CryptoPrice[]; error?:
       .select('*')
       .order('symbol')
 
-    if (error) return { error: error.message }
+    if (error) {
+      console.error('[getCryptoPrices] DB read error:', error.message)
+      // Fall through to direct Binance fetch below
+    }
 
     // Check staleness — refresh if oldest price is > 15 seconds old
     const now = new Date()
@@ -45,7 +48,7 @@ export async function getCryptoPrices(): Promise<{ data?: CryptoPrice[]; error?:
       })
 
     if (isStale) {
-      // Refresh from Binance in the background
+      // Refresh from Binance
       await refreshPricesFromBinance()
 
       // Re-read after refresh
@@ -65,12 +68,44 @@ export async function getCryptoPrices(): Promise<{ data?: CryptoPrice[]; error?:
       return { data: cached.map(mapPriceRow) }
     }
 
-    // No cached data and couldn't refresh — return empty
-    return { data: [] }
+    // DB cache empty/failed — fetch directly from Binance as last resort
+    console.log('[getCryptoPrices] DB cache empty, fetching directly from Binance...')
+    return await fetchPricesDirectFromBinance()
   } catch (err) {
     console.error('[getCryptoPrices] Error:', err)
-    return { error: 'Failed to fetch crypto prices' }
+    // Last-resort: try direct Binance fetch even on exception
+    try {
+      return await fetchPricesDirectFromBinance()
+    } catch (binanceErr) {
+      console.error('[getCryptoPrices] Direct Binance fetch also failed:', binanceErr)
+      return { error: 'Failed to fetch crypto prices' }
+    }
   }
+}
+
+/**
+ * Bypass DB cache and fetch prices directly from Binance.
+ * Used as fallback when crypto_prices table is empty or DB errors occur.
+ */
+async function fetchPricesDirectFromBinance(): Promise<{ data?: CryptoPrice[]; error?: string }> {
+  const { get24hrTickers } = await import('@/lib/binance/client')
+  const symbols = Object.values(SUPPORTED_TRADING_PAIRS)
+  const tickers = await get24hrTickers(symbols)
+
+  const prices: CryptoPrice[] = tickers.map((t) => ({
+    symbol: t.symbol.replace('USDT', ''),
+    price: parseFloat(t.lastPrice),
+    change24h: parseFloat(t.priceChangePercent),
+    updatedAt: new Date().toISOString(),
+  }))
+
+  // Add stablecoins
+  prices.push(
+    { symbol: 'USDT', price: 1.0, change24h: 0, updatedAt: new Date().toISOString() },
+    { symbol: 'USDC', price: 1.0, change24h: 0, updatedAt: new Date().toISOString() },
+  )
+
+  return { data: prices }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

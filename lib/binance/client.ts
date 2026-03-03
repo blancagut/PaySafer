@@ -37,7 +37,9 @@ if (!process.env.BINANCE_API_KEY) {
 const PROD_BASE = 'https://api.binance.com'
 const TESTNET_BASE = 'https://testnet.binance.vision'
 
-function getBaseUrl(): string {
+/** Use production for public/price data (always available), testnet only for signed/trading */
+function getBaseUrl(forceProduction = false): string {
+  if (forceProduction) return PROD_BASE
   return process.env.USE_BINANCE_TESTNET === 'true' ? TESTNET_BASE : PROD_BASE
 }
 
@@ -62,7 +64,8 @@ function getApiSecret(): string {
 }
 
 async function publicGet<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
-  const url = new URL(`${getBaseUrl()}${endpoint}`)
+  // Always use production Binance for public data — testnet has very limited pairs/data
+  const url = new URL(`${getBaseUrl(true)}${endpoint}`)
   if (params) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
   }
@@ -75,6 +78,7 @@ async function publicGet<T>(endpoint: string, params?: Record<string, string>): 
 
   if (!res.ok) {
     const body = await res.text()
+    console.error(`[Binance] Public API error ${res.status}: ${body} — URL: ${url.toString()}`)
     throw new Error(`Binance API error ${res.status}: ${body}`)
   }
 
@@ -107,6 +111,7 @@ async function signedRequest<T>(
 
   if (!res.ok) {
     const body = await res.text()
+    console.error(`[Binance] Signed API error ${res.status}: ${body}`)
     throw new Error(`Binance API error ${res.status}: ${body}`)
   }
 

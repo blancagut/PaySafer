@@ -78,6 +78,7 @@ export default function CryptoPage() {
   const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [confirmStep, setConfirmStep] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -87,9 +88,21 @@ export default function CryptoPage() {
   const fetchPrices = useCallback(async () => {
     try {
       const res = await fetch("/api/crypto/prices")
-      if (!res.ok) return
-      const { prices } = (await res.json()) as { prices: CryptoPrice[] }
-      if (!prices || prices.length === 0) return
+      if (!res.ok) {
+        console.error("Price API returned", res.status)
+        setLoadError("Failed to load prices (API error)")
+        return
+      }
+      const json = await res.json()
+      const prices = json.prices as CryptoPrice[] | undefined
+
+      if (!prices || prices.length === 0) {
+        console.warn("Price API returned empty prices")
+        if (assets.length === 0) setLoadError("No price data available")
+        return
+      }
+
+      setLoadError(null)
 
       setAssets((prev) => {
         const holdingsMap = new Map(prev.map((a) => [a.symbol, { holdings: a.holdings, avgBuyPrice: a.avgBuyPrice }]))
@@ -123,8 +136,9 @@ export default function CryptoPage() {
       setLastUpdate(new Date())
     } catch (err) {
       console.error("Failed to fetch prices:", err)
+      if (assets.length === 0) setLoadError("Network error fetching prices")
     }
-  }, [])
+  }, [assets.length])
 
   const fetchHoldings = useCallback(async () => {
     try {
@@ -233,6 +247,22 @@ export default function CryptoPage() {
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">Loading crypto markets...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (loadError && assets.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto mb-3" />
+          <p className="text-sm text-foreground font-medium mb-1">Could not load crypto data</p>
+          <p className="text-xs text-muted-foreground mb-4">{loadError}</p>
+          <Button variant="outline" size="sm" onClick={() => { setLoadError(null); setInitialLoading(true); fetchPrices().then(() => setInitialLoading(false)) }}>
+            <RefreshCw className="w-4 h-4 mr-1.5" />
+            Try again
+          </Button>
         </div>
       </div>
     )
