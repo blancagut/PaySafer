@@ -87,8 +87,8 @@ export default function DebitCardPage() {
             <CreditCard className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-foreground">Debit Card</h2>
-            <p className="text-sm text-muted-foreground">
+            <h2 className="text-2xl font-semibold tracking-tight text-foreground">Debit Card</h2>
+            <p className="text-sm text-muted-foreground font-light tracking-wide">
               Choose the card that fits your lifestyle
             </p>
           </div>
@@ -104,7 +104,7 @@ export default function DebitCardPage() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <span className="text-sm font-semibold text-foreground">Limited Availability</span>
+                <span className="text-sm font-medium text-foreground">Limited Availability</span>
                 <GlassBadge variant="amber" size="sm" pulse>
                   U.S. & UAE Only
                 </GlassBadge>
@@ -131,8 +131,8 @@ export default function DebitCardPage() {
           <div className="flex items-center gap-3">
             <Sparkles className="w-4 h-4 text-primary shrink-0" />
             <div>
-              <span className="text-sm font-semibold text-foreground">No monthly fees, ever.</span>
-              <span className="text-sm text-muted-foreground ml-1.5">
+              <span className="text-sm font-medium text-foreground">No monthly fees, ever.</span>
+              <span className="text-sm text-muted-foreground font-light ml-1.5">
                 Pay once for your card — all perks included forever. Start free, upgrade anytime.
               </span>
             </div>
@@ -155,10 +155,10 @@ export default function DebitCardPage() {
                 value={`faq-${index}`}
                 className="border-white/[0.06]"
               >
-                <AccordionTrigger className="text-sm font-medium text-foreground hover:text-primary transition-colors py-4">
+                <AccordionTrigger className="text-sm font-normal text-foreground hover:text-primary transition-colors py-4">
                   {faq.question}
                 </AccordionTrigger>
-                <AccordionContent className="text-sm text-muted-foreground leading-relaxed pb-4">
+                <AccordionContent className="text-[13px] text-muted-foreground font-light leading-relaxed pb-4">
                   {faq.answer}
                 </AccordionContent>
               </AccordionItem>
@@ -176,7 +176,7 @@ export default function DebitCardPage() {
                 <Globe className="w-8 h-8 text-amber-400" />
               </div>
             </div>
-            <DialogTitle className="text-center text-xl">
+            <DialogTitle className="text-center text-xl font-semibold tracking-tight">
               Not Available in Your Region
             </DialogTitle>
             <DialogDescription className="text-center text-sm leading-relaxed pt-2">
@@ -199,13 +199,13 @@ export default function DebitCardPage() {
               <div className="w-14 h-14 rounded-xl bg-blue-500/10 flex items-center justify-center text-3xl">
                 🇺🇸
               </div>
-              <span className="text-xs text-muted-foreground font-medium">United States</span>
+              <span className="text-xs text-muted-foreground font-normal tracking-wide">United States</span>
             </div>
             <div className="flex flex-col items-center gap-2">
               <div className="w-14 h-14 rounded-xl bg-red-500/10 flex items-center justify-center text-3xl">
                 🇦🇪
               </div>
-              <span className="text-xs text-muted-foreground font-medium">UAE</span>
+              <span className="text-xs text-muted-foreground font-normal tracking-wide">UAE</span>
             </div>
           </div>
 
@@ -219,7 +219,7 @@ export default function DebitCardPage() {
           <div className="flex flex-col gap-2.5 pt-2">
             <Button
               onClick={handleNotifyMe}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold w-full"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium tracking-wide w-full"
               size="lg"
             >
               <Bell className="w-4 h-4 mr-2" />

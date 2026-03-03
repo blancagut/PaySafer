@@ -108,7 +108,7 @@ function GoldCardVisual({ className }: { className?: string }) {
 
       {/* DEBIT label */}
       <div className="absolute bottom-[8%] right-[6%]">
-        <span className="text-[10px] text-white/60 font-semibold tracking-[0.2em] uppercase">Debit</span>
+        <span className="text-[10px] text-white/60 font-medium tracking-[0.25em] uppercase">Debit</span>
       </div>
 
       {/* Final glossy overlay */}
@@ -285,9 +285,9 @@ export function DebitCardCarousel({ className, onCardSelect }: DebitCardCarousel
       {/* Card name label + dots */}
       <div className="flex flex-col items-center gap-3">
         <div className="text-center">
-          <span className="text-base font-semibold text-foreground">{activeCard?.name}</span>
+          <span className="text-base font-medium tracking-wide text-foreground">{activeCard?.name}</span>
           <span className="text-muted-foreground mx-2">·</span>
-          <span className={cn("text-sm font-medium", accent.text)}>
+          <span className={cn("text-sm font-normal", accent.text)}>
             {activeCard?.price === "Free" ? "Free" : activeCard?.price}
           </span>
         </div>
@@ -321,15 +321,15 @@ export function DebitCardCarousel({ className, onCardSelect }: DebitCardCarousel
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div>
             <div className="flex items-center gap-2.5">
-              <h3 className="text-lg font-bold text-foreground">{activeCard?.name}</h3>
+              <h3 className="text-lg font-medium tracking-wide text-foreground">{activeCard?.name}</h3>
               <GlassBadge variant={activeCard?.badgeVariant} size="sm">
                 {activeCard?.badgeLabel}
               </GlassBadge>
             </div>
-            <p className="text-sm text-muted-foreground mt-0.5">{activeCard?.tagline}</p>
+            <p className="text-[13px] text-muted-foreground mt-1">{activeCard?.tagline}</p>
           </div>
           <div className="text-right shrink-0">
-            <div className={cn("text-lg font-bold", accent.text)}>{activeCard?.price}</div>
+            <div className={cn("text-lg font-semibold", accent.text)}>{activeCard?.price}</div>
             {activeCard?.priceNote && (
               <div className="text-[10px] text-muted-foreground">{activeCard.priceNote}</div>
             )}
@@ -354,7 +354,7 @@ export function DebitCardCarousel({ className, onCardSelect }: DebitCardCarousel
         <div className="px-5 pb-5 pt-1">
           <Button
             onClick={() => onCardSelect?.(activeCard)}
-            className={cn("w-full font-semibold text-sm h-11", accent.btn)}
+            className={cn("w-full font-medium tracking-wide text-sm h-11", accent.btn)}
           >
             <CreditCard className="w-4 h-4 mr-2" />
             Get {activeCard?.name} Card
