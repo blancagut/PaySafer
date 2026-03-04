@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
 const SUPPORTED_CURRENCIES = ['USD', 'AED', 'EUR', 'GBP'] as const
@@ -202,4 +203,111 @@ export async function executeExchange(params: {
 
   revalidatePath('/exchange')
   return { data: (updatedWallets ?? []) as CurrencyWallet[] }
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// REFRESH EXCHANGE RATES FROM ALPHA VANTAGE
+// Fetches 4 key FX pairs and computes all 12 cross-rates.
+// Uses 4 API calls. Run 2x/day via cron.
+// ═══════════════════════════════════════════════════════════
+
+/** Alpha Vantage FX pairs to fetch (4 calls) */
+const FX_PAIRS_TO_FETCH = [
+  { from: 'USD', to: 'EUR' },
+  { from: 'USD', to: 'GBP' },
+  { from: 'USD', to: 'AED' },
+  { from: 'EUR', to: 'GBP' },
+] as const
+
+/** Rate staleness - 12 hours */
+const FX_RATE_STALE_MS = 12 * 60 * 60 * 1000
+
+export async function refreshExchangeRatesFromAlphaVantage(): Promise<{
+  success?: boolean
+  error?: string
+}> {
+  try {
+    const { getForexRate } = await import('@/lib/alphavantage/client')
+    const admin = createAdminClient()
+
+    // Step 1: Fetch the 4 base pairs from AV
+    const directRates: Record<string, number> = {}
+
+    for (const pair of FX_PAIRS_TO_FETCH) {
+      try {
+        const result = await getForexRate(pair.from, pair.to)
+        directRates[`${pair.from}-${pair.to}`] = result.exchangeRate
+        directRates[`${pair.to}-${pair.from}`] = 1 / result.exchangeRate
+      } catch (e) {
+        console.error(`[refreshFX] ${pair.from}/${pair.to} failed:`, e)
+      }
+    }
+
+    // Step 2: Compute all cross-rates for the 4 currencies
+    // Using USD as the bridge: X→Y = X→USD * USD→Y
+    // Build a map of all currencies to USD
+    const toUSD: Record<string, number> = { USD: 1 }
+    if (directRates['USD-EUR']) toUSD['EUR'] = directRates['USD-EUR']
+    if (directRates['USD-GBP']) toUSD['GBP'] = directRates['USD-GBP']
+    if (directRates['USD-AED']) toUSD['AED'] = directRates['USD-AED']
+
+    const currencies = SUPPORTED_CURRENCIES
+    const allRates: { from: string; to: string; rate: number }[] = []
+
+    for (const from of currencies) {
+      for (const to of currencies) {
+        if (from === to) continue
+        // Direct rate if available
+        const directKey = `${from}-${to}`
+        if (directRates[directKey]) {
+          allRates.push({ from, to, rate: directRates[directKey] })
+        } else if (toUSD[from] && toUSD[to]) {
+          // Cross-rate: FROM→USD→TO
+          // If USD→EUR = 0.92 and USD→GBP = 0.79, then EUR→GBP = 0.79/0.92
+          const rate = toUSD[to] / toUSD[from]
+          allRates.push({ from, to, rate })
+        }
+      }
+    }
+
+    // Step 3: Upsert all rates to DB
+    for (const r of allRates) {
+      await admin.from('exchange_rates').upsert({
+        from_currency: r.from,
+        to_currency: r.to,
+        rate: parseFloat(r.rate.toFixed(6)),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'from_currency,to_currency' })
+    }
+
+    return { success: true }
+  } catch (err) {
+    console.error('[refreshExchangeRatesFromAlphaVantage] Error:', err)
+    return { error: 'Failed to refresh exchange rates' }
+  }
+}
+
+/**
+ * Check if exchange rates are stale and refresh if needed.
+ * Called by getExchangeData if rates are older than 12 hours.
+ */
+export async function ensureFreshRates(): Promise<void> {
+  try {
+    const admin = createAdminClient()
+    const { data: latest } = await admin
+      .from('exchange_rates')
+      .select('updated_at')
+      .order('updated_at', { ascending: true })
+      .limit(1)
+
+    if (latest && latest.length > 0) {
+      const age = Date.now() - new Date(latest[0].updated_at).getTime()
+      if (age < FX_RATE_STALE_MS) return // Still fresh
+    }
+
+    await refreshExchangeRatesFromAlphaVantage()
+  } catch (err) {
+    console.error('[ensureFreshRates] Error:', err)
+  }
 }

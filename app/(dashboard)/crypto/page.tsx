@@ -178,9 +178,9 @@ export default function CryptoPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ─── Price polling every 10s ───
+  // ─── Price polling every 5 minutes (Alpha Vantage free tier = 25 calls/day) ───
   useEffect(() => {
-    pollRef.current = setInterval(fetchPrices, 10_000)
+    pollRef.current = setInterval(fetchPrices, 300_000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [fetchPrices])
 
@@ -290,7 +290,7 @@ export default function CryptoPage() {
             {timeSinceUpdate !== null && (
               <span className="text-[10px] text-muted-foreground/50 hidden sm:block">
                 <Clock className="w-3 h-3 inline mr-0.5" />
-                {timeSinceUpdate < 5 ? "just now" : `${timeSinceUpdate}s ago`}
+                {timeSinceUpdate < 60 ? "just now" : timeSinceUpdate < 3600 ? `${Math.round(timeSinceUpdate / 60)}m ago` : `${Math.round(timeSinceUpdate / 3600)}h ago`}
               </span>
             )}
             <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing} className="text-sm">
@@ -550,7 +550,7 @@ export default function CryptoPage() {
         <Info className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
         <p className="text-xs text-muted-foreground/70">
           Cryptocurrency is volatile and high-risk. Past performance doesn&apos;t guarantee future returns.
-          Not FDIC insured. Trade responsibly. Prices powered by Binance.
+          Not FDIC insured. Trade responsibly. Prices powered by Alpha Vantage (updated every ~6h).
         </p>
       </div>
 

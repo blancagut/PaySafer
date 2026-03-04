@@ -10,6 +10,7 @@ import type {
   TradeResult,
 } from '@/lib/binance/types'
 import { SUPPORTED_TRADING_PAIRS, MIN_TRADE_QTY } from '@/lib/binance/types'
+import { AV_CRYPTO_SYMBOLS } from '@/lib/alphavantage/types'
 
 // ─── Configuration ───
 
@@ -17,9 +18,12 @@ const FEE_PERCENT = parseFloat(process.env.CRYPTO_FEE_PERCENT || '0.5') / 100 //
 const MIN_TRADE_USD = parseFloat(process.env.CRYPTO_MIN_TRADE_USD || '10')
 const MAX_TRADE_USD = parseFloat(process.env.CRYPTO_MAX_TRADE_USD || '10000')
 
+/** Price staleness threshold: 6 hours (free tier = 25 calls/day) */
+const PRICE_STALE_MS = 6 * 60 * 60 * 1000  // 21,600,000 ms
+
 // ═══════════════════════════════════════════════════════════
 // GET CRYPTO PRICES
-// Reads from DB cache, refreshes from Binance if stale (>15s)
+// Reads from DB cache, refreshes from Alpha Vantage if stale (>6h)
 // ═══════════════════════════════════════════════════════════
 
 export async function getCryptoPrices(): Promise<{ data?: CryptoPrice[]; error?: string }> {
@@ -37,19 +41,19 @@ export async function getCryptoPrices(): Promise<{ data?: CryptoPrice[]; error?:
       // Fall through to direct Binance fetch below
     }
 
-    // Check staleness — refresh if oldest price is > 15 seconds old
+    // Check staleness — refresh if oldest price is > 6 hours old
     const now = new Date()
     const isStale =
       !cached ||
       cached.length === 0 ||
       cached.some((p: { updated_at: string }) => {
         const age = now.getTime() - new Date(p.updated_at).getTime()
-        return age > 15_000
+        return age > PRICE_STALE_MS
       })
 
     if (isStale) {
-      // Refresh from Binance
-      await refreshPricesFromBinance()
+      // Refresh from Alpha Vantage
+      await refreshPricesFromAlphaVantage()
 
       // Re-read after refresh
       const { data: fresh } = await admin
@@ -68,42 +72,57 @@ export async function getCryptoPrices(): Promise<{ data?: CryptoPrice[]; error?:
       return { data: cached.map(mapPriceRow) }
     }
 
-    // DB cache empty/failed — fetch directly from Binance as last resort
-    console.log('[getCryptoPrices] DB cache empty, fetching directly from Binance...')
-    return await fetchPricesDirectFromBinance()
+    // DB cache empty/failed — fetch directly from Alpha Vantage as last resort
+    console.log('[getCryptoPrices] DB cache empty, fetching directly from Alpha Vantage...')
+    return await fetchPricesDirectFromAlphaVantage()
   } catch (err) {
     console.error('[getCryptoPrices] Error:', err)
-    // Last-resort: try direct Binance fetch even on exception
+    // Last-resort: try direct Alpha Vantage fetch even on exception
     try {
-      return await fetchPricesDirectFromBinance()
-    } catch (binanceErr) {
-      console.error('[getCryptoPrices] Direct Binance fetch also failed:', binanceErr)
+      return await fetchPricesDirectFromAlphaVantage()
+    } catch (avErr) {
+      console.error('[getCryptoPrices] Direct Alpha Vantage fetch also failed:', avErr)
       return { error: 'Failed to fetch crypto prices' }
     }
   }
 }
 
 /**
- * Bypass DB cache and fetch prices directly from Binance.
+ * Bypass DB cache and fetch prices directly from Alpha Vantage.
  * Used as fallback when crypto_prices table is empty or DB errors occur.
+ * NOTE: Each coin = 1 API call. This uses 7 calls from the daily budget.
  */
-async function fetchPricesDirectFromBinance(): Promise<{ data?: CryptoPrice[]; error?: string }> {
-  const { get24hrTickers } = await import('@/lib/binance/client')
-  const symbols = Object.values(SUPPORTED_TRADING_PAIRS)
-  const tickers = await get24hrTickers(symbols)
+async function fetchPricesDirectFromAlphaVantage(): Promise<{ data?: CryptoPrice[]; error?: string }> {
+  const { getCryptoExchangeRate } = await import('@/lib/alphavantage/client')
 
-  const prices: CryptoPrice[] = tickers.map((t) => ({
-    symbol: t.symbol.replace('USDT', ''),
-    price: parseFloat(t.lastPrice),
-    change24h: parseFloat(t.priceChangePercent),
-    updatedAt: new Date().toISOString(),
-  }))
+  const prices: CryptoPrice[] = []
+  const errors: string[] = []
+
+  // Fetch each coin sequentially to avoid burst rate limits
+  for (const symbol of AV_CRYPTO_SYMBOLS) {
+    try {
+      const rate = await getCryptoExchangeRate(symbol, 'USD')
+      prices.push({
+        symbol,
+        price: rate.exchangeRate,
+        change24h: 0, // CURRENCY_EXCHANGE_RATE doesn't provide 24h change
+        updatedAt: rate.lastRefreshed || new Date().toISOString(),
+      })
+    } catch (err) {
+      console.error(`[fetchPricesDirectFromAlphaVantage] ${symbol} failed:`, err)
+      errors.push(symbol)
+    }
+  }
 
   // Add stablecoins
   prices.push(
     { symbol: 'USDT', price: 1.0, change24h: 0, updatedAt: new Date().toISOString() },
     { symbol: 'USDC', price: 1.0, change24h: 0, updatedAt: new Date().toISOString() },
   )
+
+  if (prices.length <= 2 && errors.length > 0) {
+    return { error: `Failed to fetch prices for: ${errors.join(', ')}` }
+  }
 
   return { data: prices }
 }
@@ -119,44 +138,42 @@ function mapPriceRow(row: any): CryptoPrice {
 }
 
 /**
- * Fetch live prices from Binance and update the cache table.
- * Called server-side only.
+ * Fetch live prices from Alpha Vantage and update the cache table.
+ * Uses CURRENCY_EXCHANGE_RATE endpoint (1 call per coin = 7 calls).
+ * Called server-side only when prices are stale (>6 hours).
  */
-export async function refreshPricesFromBinance(): Promise<void> {
+export async function refreshPricesFromAlphaVantage(): Promise<void> {
   try {
-    // Dynamic import to avoid top-level import of server-only Binance client
-    const { get24hrTickers } = await import('@/lib/binance/client')
-
-    const symbols = [
-      ...Object.values(SUPPORTED_TRADING_PAIRS), // BTCUSDT, ETHUSDT, etc.
-    ]
-
-    const tickers = await get24hrTickers(symbols)
+    const { getCryptoExchangeRate } = await import('@/lib/alphavantage/client')
 
     const admin = createAdminClient()
 
-    // Upsert each price
-    for (const ticker of tickers) {
-      // Extract coin symbol from pair (BTCUSDT → BTC)
-      const coinSymbol = ticker.symbol.replace('USDT', '')
+    // Fetch each coin sequentially (avoids burst rate limits)
+    for (const symbol of AV_CRYPTO_SYMBOLS) {
+      try {
+        const rate = await getCryptoExchangeRate(symbol, 'USD')
 
-      await admin
-        .from('crypto_prices')
-        .upsert(
-          {
-            symbol: coinSymbol,
-            price: parseFloat(ticker.lastPrice),
-            change_24h: parseFloat(ticker.priceChangePercent),
-            high_24h: parseFloat(ticker.highPrice),
-            low_24h: parseFloat(ticker.lowPrice),
-            volume_24h: parseFloat(ticker.quoteVolume),
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'symbol' }
-        )
+        await admin
+          .from('crypto_prices')
+          .upsert(
+            {
+              symbol,
+              price: rate.exchangeRate,
+              change_24h: 0, // CURRENCY_EXCHANGE_RATE doesn't provide 24h change
+              high_24h: rate.askPrice || rate.exchangeRate,
+              low_24h: rate.bidPrice || rate.exchangeRate,
+              volume_24h: 0,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'symbol' }
+          )
+      } catch (err) {
+        console.error(`[refreshPricesFromAlphaVantage] ${symbol} failed:`, err)
+        // Continue with remaining coins
+      }
     }
 
-    // Also add stablecoin prices (not traded against USDT)
+    // Also add stablecoin prices
     await admin.from('crypto_prices').upsert(
       { symbol: 'USDT', price: 1.0, change_24h: 0, updated_at: new Date().toISOString() },
       { onConflict: 'symbol' }
@@ -166,7 +183,7 @@ export async function refreshPricesFromBinance(): Promise<void> {
       { onConflict: 'symbol' }
     )
   } catch (err) {
-    console.error('[refreshPricesFromBinance] Error:', err)
+    console.error('[refreshPricesFromAlphaVantage] Error:', err)
     // Don't throw — callers fall back to cached prices
   }
 }

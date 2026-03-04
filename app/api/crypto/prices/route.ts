@@ -4,8 +4,8 @@ import { getCryptoPrices } from '@/lib/actions/crypto'
 /**
  * GET /api/crypto/prices
  *
- * Returns cached crypto prices. Refreshes from Binance if stale (>15s).
- * Called by the crypto page every 10s for live price updates.
+ * Returns cached crypto prices. Refreshes from Alpha Vantage if stale (>6h).
+ * Called by the crypto page every 5 minutes for price updates.
  *
  * Rate limited to 30/min per IP via middleware.
  */
@@ -24,7 +24,7 @@ export async function GET() {
       { prices: result.data },
       {
         headers: {
-          'Cache-Control': 'public, s-maxage=5, stale-while-revalidate=10',
+          'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
         },
       }
     )

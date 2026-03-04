@@ -44,6 +44,9 @@ import {
   RotateCcw,
   Bitcoin,
   MapPin,
+  LineChart,
+  Newspaper,
+  TrendingUp,
 } from "lucide-react"
 import { Logo } from "@/components/logo"
 import { cn } from "@/lib/utils"
@@ -83,6 +86,9 @@ export const servicesNavigation = [
   { name: "Split Expenses", href: "/split", icon: Scissors },
   { name: "Subscriptions", href: "/subscriptions", icon: RotateCcw },
   { name: "Crypto", href: "/crypto", icon: Bitcoin, badge: "NEW" as const },
+  { name: "Markets", href: "/markets", icon: LineChart, badge: "NEW" as const },
+  { name: "News", href: "/news", icon: Newspaper },
+  { name: "Stocks", href: "/stocks", icon: TrendingUp, badge: "NEW" as const },
   { name: "ATM Finder", href: "/atm-finder", icon: MapPin },
 ]
 
