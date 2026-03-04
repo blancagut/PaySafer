@@ -8,13 +8,6 @@ import Link from "next/link"
 import Image from "next/image"
 import { Logo } from "@/components/logo"
 
-/* TODO: Restore credit card slider — kept for future re-activation */
-const slides = [
-  { src: "/slides/slide-1.jpg", alt: "PaySafer — Secure escrow transactions" },
-  { src: "/slides/slide-2.jpg", alt: "PaySafer — Track your payments" },
-  { src: "/slides/slide-3.jpg", alt: "PaySafer — Full transaction dashboard" },
-]
-
 const landingSlides = [
   { src: "/landing1.jpg", alt: "PaySafer — Your trusted payment partner" },
   { src: "/landing2.jpg", alt: "PaySafer — Secure global transactions" },
@@ -23,15 +16,6 @@ const landingSlides = [
 ]
 
 export default function LandingPage() {
-  /* Old slider state — kept for future restoration */
-  const [current, setCurrent] = useState(0)
-  const next = useCallback(() => setCurrent((c) => (c + 1) % slides.length), [])
-  const prev = useCallback(() => setCurrent((c) => (c - 1 + slides.length) % slides.length), [])
-  useEffect(() => {
-    const timer = setInterval(next, 5000)
-    return () => clearInterval(timer)
-  }, [next])
-
   /* New landing slider state */
   const [landingCurrent, setLandingCurrent] = useState(0)
   const landingNext = useCallback(() => setLandingCurrent((c) => (c + 1) % landingSlides.length), [])
@@ -59,59 +43,6 @@ export default function LandingPage() {
           </div>
         </div>
       </header>
-
-      {/* ============================================================
-          HIDDEN: Original credit card slider — restore by removing
-          the {false && (...)} wrapper below.
-          ============================================================ */}
-      {false && (
-      <section className="relative w-full overflow-hidden bg-[#0A0F1A]">
-        <div className="relative w-full aspect-[16/9] md:aspect-[21/9]">
-          {slides.map((slide, i) => (
-            <div
-              key={i}
-              className="absolute inset-0 transition-opacity duration-700 ease-in-out bg-[#0A0F1A]"
-              style={{ opacity: i === current ? 1 : 0 }}
-            >
-              <Image
-                src={slide.src}
-                alt={slide.alt}
-                fill
-                className="object-contain"
-                sizes="100vw"
-                priority={i === 0}
-              />
-            </div>
-          ))}
-          <button
-            onClick={prev}
-            className="absolute left-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur flex items-center justify-center text-white transition-colors"
-            aria-label="Previous slide"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          <button
-            onClick={next}
-            className="absolute right-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur flex items-center justify-center text-white transition-colors"
-            aria-label="Next slide"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </button>
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex gap-2">
-            {slides.map((_, i) => (
-              <button
-                key={i}
-                onClick={() => setCurrent(i)}
-                className={`w-2.5 h-2.5 rounded-full transition-colors ${
-                  i === current ? "bg-emerald-400" : "bg-white/30 hover:bg-white/50"
-                }`}
-                aria-label={`Go to slide ${i + 1}`}
-              />
-            ))}
-          </div>
-        </div>
-      </section>
-      )}
 
       {/* Section — Static Hero Banner */}
       <section className="relative w-full bg-[#0A0F1A]">
