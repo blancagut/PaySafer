@@ -1,12 +1,13 @@
-// PaySafer Service Worker v2.0
+// PaySafer Service Worker v3.0
 // PWA: Push notifications + offline caching + background sync
 
-const CACHE_VERSION = 'paysafer-v2'
+const CACHE_VERSION = 'paysafer-v3'
 const STATIC_CACHE = CACHE_VERSION + '-static'
 const DYNAMIC_CACHE = CACHE_VERSION + '-dynamic'
 
 // Static assets to pre-cache on install
 const PRECACHE_URLS = [
+  '/paysafericon.png',
   '/paysaferfavicon.png',
   '/manifest.json',
 ]

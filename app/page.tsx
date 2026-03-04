@@ -115,7 +115,7 @@ export default function LandingPage() {
 
       {/* Section — Static Hero Banner */}
       <section className="relative w-full bg-[#0A0F1A]">
-        <div className="relative w-full aspect-[16/9] md:aspect-[21/9]">
+        <div className="relative w-full min-h-[220px] md:min-h-[360px] lg:min-h-[520px]">
           <Image
             src="/firstmainstatic.jpg"
             alt="PaySafer — Pay globally, stay in control"
@@ -123,13 +123,14 @@ export default function LandingPage() {
             className="object-cover"
             sizes="100vw"
             priority
+            unoptimized
           />
         </div>
       </section>
 
       {/* Section — Landing Slider */}
       <section className="relative w-full overflow-hidden bg-[#0A0F1A] border-t border-white/5">
-        <div className="relative w-full aspect-[16/9] md:aspect-[21/9]">
+        <div className="relative w-full min-h-[220px] md:min-h-[360px] lg:min-h-[520px]">
           {landingSlides.map((slide, i) => (
             <div
               key={i}
@@ -143,6 +144,7 @@ export default function LandingPage() {
                 className="object-cover"
                 sizes="100vw"
                 priority={i === 0}
+                unoptimized
               />
             </div>
           ))}

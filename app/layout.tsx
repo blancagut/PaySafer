@@ -26,9 +26,12 @@ export const metadata: Metadata = {
     title: 'PaySafer',
   },
   icons: {
-    icon: '/paysaferfavicon.png',
-    shortcut: '/paysaferfavicon.png',
-    apple: '/paysaferfavicon.png',
+    icon: [
+      { url: '/paysafericon.png', type: 'image/png', sizes: '512x512' },
+      { url: '/paysaferfavicon.png', type: 'image/png' },
+    ],
+    shortcut: '/paysafericon.png',
+    apple: [{ url: '/paysafericon.png', sizes: '180x180', type: 'image/png' }],
   },
   other: {
     'mobile-web-app-capable': 'yes',
