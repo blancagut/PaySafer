@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import {
   RotateCcw,
   Plus,
@@ -39,6 +39,12 @@ import {
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import {
+  getSubscriptions,
+  toggleSubscriptionPause,
+  cancelSubscription,
+  type UserSubscription,
+} from "@/lib/actions/subscriptions"
 
 // ─── Subscription Categories ───
 
@@ -55,7 +61,7 @@ const subCategories: Record<string, { icon: typeof Tv; color: string }> = {
   security: { icon: Shield, color: "text-emerald-400" },
 }
 
-// ─── Mock Subscriptions ───
+// ─── Subscription interface for UI rendering ───
 
 interface Subscription {
   id: string
@@ -66,23 +72,26 @@ interface Subscription {
   billingCycle: "monthly" | "yearly"
   nextBilling: string
   status: "active" | "paused" | "trial" | "expiring"
-  logo?: string
   color: string
   startDate: string
 }
 
-const mockSubs: Subscription[] = [
-  { id: "sub1", name: "Netflix", category: "streaming", amount: 55.99, currency: "AED", billingCycle: "monthly", nextBilling: "Mar 20, 2026", status: "active", color: "bg-red-500", startDate: "Jan 2024" },
-  { id: "sub2", name: "Spotify Premium", category: "music", amount: 32.99, currency: "AED", billingCycle: "monthly", nextBilling: "Mar 15, 2026", status: "active", color: "bg-green-500", startDate: "Mar 2023" },
-  { id: "sub3", name: "iCloud+ 200GB", category: "cloud", amount: 10.99, currency: "AED", billingCycle: "monthly", nextBilling: "Mar 12, 2026", status: "active", color: "bg-blue-500", startDate: "Jun 2023" },
-  { id: "sub4", name: "YouTube Premium", category: "streaming", amount: 29.99, currency: "AED", billingCycle: "monthly", nextBilling: "Mar 18, 2026", status: "active", color: "bg-red-600", startDate: "Sep 2024" },
-  { id: "sub5", name: "ChatGPT Plus", category: "cloud", amount: 73.50, currency: "AED", billingCycle: "monthly", nextBilling: "Mar 22, 2026", status: "active", color: "bg-teal-500", startDate: "Feb 2025" },
-  { id: "sub6", name: "Adobe Creative Cloud", category: "cloud", amount: 219.99, currency: "AED", billingCycle: "monthly", nextBilling: "Apr 1, 2026", status: "active", color: "bg-violet-600", startDate: "Aug 2022" },
-  { id: "sub7", name: "Gym (Fitness First)", category: "fitness", amount: 299.00, currency: "AED", billingCycle: "monthly", nextBilling: "Apr 1, 2026", status: "active", color: "bg-orange-500", startDate: "Jan 2025" },
-  { id: "sub8", name: "NordVPN", category: "security", amount: 49.99, currency: "AED", billingCycle: "yearly", nextBilling: "Dec 15, 2026", status: "active", color: "bg-indigo-600", startDate: "Dec 2024" },
-  { id: "sub9", name: "Duolingo Plus", category: "education", amount: 44.99, currency: "AED", billingCycle: "monthly", nextBilling: "Mar 25, 2026", status: "trial", color: "bg-lime-500", startDate: "Feb 2026" },
-  { id: "sub10", name: "Xbox Game Pass", category: "gaming", amount: 59.99, currency: "AED", billingCycle: "monthly", nextBilling: "Mar 28, 2026", status: "paused", color: "bg-green-600", startDate: "May 2024" },
-]
+function mapSub(s: UserSubscription): Subscription {
+  return {
+    id: s.id,
+    name: s.name,
+    category: s.category,
+    amount: Number(s.amount),
+    currency: s.currency,
+    billingCycle: s.billing_cycle,
+    nextBilling: s.next_billing
+      ? new Date(s.next_billing).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      : "—",
+    status: s.status as Subscription["status"],
+    color: s.color || "bg-blue-500",
+    startDate: s.start_date ?? "—",
+  }
+}
 
 const statusStyle: Record<string, { label: string; badge: "emerald" | "amber" | "blue" | "purple" }> = {
   active: { label: "Active", badge: "emerald" },
@@ -92,10 +101,20 @@ const statusStyle: Record<string, { label: string; badge: "emerald" | "amber" | 
 }
 
 export default function SubscriptionsPage() {
-  const [subs, setSubs] = useState<Subscription[]>(mockSubs)
+  const [subs, setSubs] = useState<Subscription[]>([])
   const [search, setSearch] = useState("")
   const [showCancel, setShowCancel] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [pageLoading, setPageLoading] = useState(true)
+
+  const loadSubs = useCallback(async () => {
+    const { data, error } = await getSubscriptions()
+    if (error) toast.error(error)
+    setSubs(data.map(mapSub))
+    setPageLoading(false)
+  }, [])
+
+  useEffect(() => { loadSubs() }, [loadSubs])
 
   const activeSubs = subs.filter((s) => s.status === "active" || s.status === "trial")
   const monthlyTotal = subs
@@ -117,27 +136,39 @@ export default function SubscriptionsPage() {
 
   const handlePauseResume = async (subId: string) => {
     setLoading(true)
-    await new Promise((r) => setTimeout(r, 600))
-    setSubs(subs.map((s) =>
-      s.id === subId
-        ? { ...s, status: s.status === "paused" ? "active" as const : "paused" as const }
-        : s
-    ))
-    const sub = subs.find((s) => s.id === subId)!
-    toast.success(sub.status === "paused" ? `${sub.name} resumed` : `${sub.name} paused`)
+    const { data: updated, error } = await toggleSubscriptionPause(subId)
+    if (error) {
+      toast.error(error)
+    } else if (updated) {
+      const mapped = mapSub(updated)
+      setSubs(subs.map((s) => (s.id === subId ? mapped : s)))
+      toast.success(mapped.status === "paused" ? `${mapped.name} paused` : `${mapped.name} resumed`)
+    }
     setLoading(false)
   }
 
   const handleCancel = async (subId: string) => {
     setLoading(true)
-    await new Promise((r) => setTimeout(r, 1000))
     const sub = subs.find((s) => s.id === subId)!
-    setSubs(subs.filter((s) => s.id !== subId))
-    toast.success(`${sub.name} cancelled`, {
-      description: `You'll save ${sub.currency} ${sub.amount.toFixed(2)}/${sub.billingCycle === "monthly" ? "mo" : "yr"}`,
-    })
+    const { error } = await cancelSubscription(subId)
+    if (error) {
+      toast.error(error)
+    } else {
+      setSubs(subs.filter((s) => s.id !== subId))
+      toast.success(`${sub.name} cancelled`, {
+        description: `You'll save ${sub.currency} ${sub.amount.toFixed(2)}/${sub.billingCycle === "monthly" ? "mo" : "yr"}`,
+      })
+    }
     setShowCancel(null)
     setLoading(false)
+  }
+
+  if (pageLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    )
   }
 
   return (

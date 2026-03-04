@@ -1,6 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
+import {
+  getRewardsData,
+  redeemCashback,
+  type RewardsSummary,
+  type CashbackTransaction,
+} from "@/lib/actions/rewards"
 import {
   Gift,
   Star,
@@ -16,34 +22,13 @@ import {
   Percent,
   ChevronRight,
   CheckCircle2,
+  Loader2,
 } from "lucide-react"
 import { GlassCard, GlassContainer, GlassStat } from "@/components/glass"
 import { GlassBadge } from "@/components/glass"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-
-// ─── Mock Data ───
-
-interface CashbackTransaction {
-  id: string
-  merchant: string
-  category: string
-  amount: number
-  cashback: number
-  rate: string
-  date: string
-  status: "credited" | "pending"
-}
-
-const cashbackHistory: CashbackTransaction[] = [
-  { id: "c1", merchant: "Carrefour", category: "Groceries", amount: 245.80, cashback: 4.92, rate: "2%", date: "Mar 2, 2026", status: "credited" },
-  { id: "c2", merchant: "Emirates", category: "Travel", amount: 1200.00, cashback: 36.00, rate: "3%", date: "Mar 1, 2026", status: "pending" },
-  { id: "c3", merchant: "Starbucks", category: "Dining", amount: 18.50, cashback: 0.37, rate: "2%", date: "Feb 28, 2026", status: "credited" },
-  { id: "c4", merchant: "Amazon", category: "Shopping", amount: 189.99, cashback: 1.90, rate: "1%", date: "Feb 27, 2026", status: "credited" },
-  { id: "c5", merchant: "Uber", category: "Transport", amount: 34.00, cashback: 0.68, rate: "2%", date: "Feb 26, 2026", status: "credited" },
-  { id: "c6", merchant: "Netflix", category: "Entertainment", amount: 15.99, cashback: 0.16, rate: "1%", date: "Feb 25, 2026", status: "credited" },
-]
 
 interface RewardTier {
   name: string
@@ -93,22 +78,50 @@ const boostOffers = [
 
 export default function RewardsPage() {
   const [activeTab, setActiveTab] = useState<"overview" | "history" | "tiers">("overview")
+  const [summary, setSummary] = useState<RewardsSummary>({ currentTier: "standard", totalEarned: 0, thisMonth: 0, pendingCashback: 0 })
+  const [cashbackHistory, setCashbackHistory] = useState<CashbackTransaction[]>([])
+  const [pageLoading, setPageLoading] = useState(true)
+  const [redeeming, setRedeeming] = useState(false)
 
-  const totalEarned = 284.65
-  const thisMonth = 43.87
-  const pendingCashback = 36.00
-  const currentTier = "Gold"
+  const loadRewards = useCallback(async () => {
+    setPageLoading(true)
+    const data = await getRewardsData()
+    setSummary(data.summary)
+    setCashbackHistory(data.history)
+    setPageLoading(false)
+  }, [])
 
-  const handleRedeem = () => {
-    toast.success("$43.87 cashback credited to your wallet!", {
-      description: "This month's cashback has been added to your balance.",
-    })
+  useEffect(() => { loadRewards() }, [loadRewards])
+
+  const { totalEarned, thisMonth, pendingCashback, currentTier } = summary
+  const tierLabel = currentTier.charAt(0).toUpperCase() + currentTier.slice(1)
+
+  const handleRedeem = async () => {
+    setRedeeming(true)
+    const res = await redeemCashback()
+    if (res.success) {
+      toast.success(`$${res.amount.toFixed(2)} cashback credited to your wallet!`, {
+        description: "This month's cashback has been added to your balance.",
+      })
+      loadRewards()
+    } else {
+      toast.error("No cashback available to redeem")
+    }
+    setRedeeming(false)
   }
 
   const handleActivateBoost = (merchant: string) => {
     toast.success(`${merchant} boost activated!`, {
       description: "Enhanced cashback rate is now active for this merchant.",
     })
+  }
+
+  if (pageLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    )
   }
 
   return (
@@ -146,7 +159,7 @@ export default function RewardsPage() {
         </GlassCard>
         <GlassCard padding="md">
           <span className="text-xs text-muted-foreground tracking-wide uppercase block mb-1">Your Tier</span>
-          <span className="text-xl font-semibold text-amber-400">{currentTier}</span>
+          <span className="text-xl font-semibold text-amber-400">{tierLabel}</span>
         </GlassCard>
       </div>
 
@@ -160,7 +173,7 @@ export default function RewardsPage() {
                 ${thisMonth.toFixed(2)} cashback available for instant wallet credit
               </p>
             </div>
-            <Button onClick={handleRedeem} className="bg-emerald-500 hover:bg-emerald-600 text-white text-sm">
+            <Button onClick={handleRedeem} disabled={redeeming || thisMonth <= 0} className="bg-emerald-500 hover:bg-emerald-600 text-white text-sm">
               <DollarSign className="w-4 h-4 mr-1" />
               Redeem Now
             </Button>
@@ -232,7 +245,7 @@ export default function RewardsPage() {
         {/* Overview Tab */}
         {activeTab === "overview" && (
           <GlassCard padding="md">
-            <h3 className="text-sm font-medium text-foreground mb-4">Your Cashback Rates (Gold Tier)</h3>
+            <h3 className="text-sm font-medium text-foreground mb-4">Your Cashback Rates ({tierLabel} Tier)</h3>
             <div className="space-y-3">
               {[
                 { category: "Travel & Airlines", rate: "3%", icon: Plane, color: "text-blue-400" },
@@ -293,7 +306,7 @@ export default function RewardsPage() {
         {activeTab === "tiers" && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {rewardTiers.map((tier) => {
-              const isCurrent = tier.name === currentTier
+              const isCurrent = tier.name.toLowerCase() === currentTier
               return (
                 <div
                   key={tier.name}

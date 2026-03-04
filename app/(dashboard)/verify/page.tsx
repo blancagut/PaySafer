@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import {
   Fingerprint,
   Upload,
@@ -21,10 +21,16 @@ import { GlassBadge } from "@/components/glass"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import {
+  getVerificationStatus,
+  uploadKycDocument,
+  submitKycVerification,
+  type VerificationLevel,
+  type KycDocument,
+  type KycSubmission,
+} from "@/lib/actions/verify"
 
 // ─── Verification Levels ───
-
-type VerificationLevel = "none" | "basic" | "enhanced" | "full"
 
 const levels: { id: VerificationLevel; label: string; desc: string; docs: string[] }[] = [
   {
@@ -54,45 +60,47 @@ function DocumentUpload({
   description,
   accept,
   icon: Icon,
-  file,
-  onFile,
-  status,
+  documentType,
+  existingDoc,
+  onUploaded,
 }: {
   label: string
   description: string
   accept: string
   icon: React.ComponentType<{ className?: string }>
-  file: File | null
-  onFile: (f: File | null) => void
-  status: "idle" | "uploading" | "uploaded" | "verified" | "rejected"
+  documentType: string
+  existingDoc: KycDocument | null
+  onUploaded: (doc: KycDocument) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+  const [localFile, setLocalFile] = useState<string | null>(existingDoc?.file_name ?? null)
 
   const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
     if (!f) return
     setUploading(true)
-    // Simulate upload
-    await new Promise((r) => setTimeout(r, 1200))
-    onFile(f)
+    const formData = new FormData()
+    formData.append("file", f)
+    const result = await uploadKycDocument(documentType, formData)
     setUploading(false)
-    toast.success(`${label} uploaded successfully`)
+    if (result.error) {
+      toast.error(result.error)
+    } else if (result.data) {
+      setLocalFile(f.name)
+      onUploaded(result.data)
+      toast.success(`${label} uploaded successfully`)
+    }
     if (inputRef.current) inputRef.current.value = ""
   }
 
-  const statusConfig = {
-    idle: { badge: null, border: "border-white/[0.06]" },
-    uploading: { badge: null, border: "border-blue-500/30" },
-    uploaded: { badge: <GlassBadge variant="blue" size="sm">Pending Review</GlassBadge>, border: "border-blue-500/20" },
-    verified: { badge: <GlassBadge variant="emerald" size="sm">Verified</GlassBadge>, border: "border-emerald-500/20" },
-    rejected: { badge: <GlassBadge variant="red" size="sm">Resubmit</GlassBadge>, border: "border-red-500/20" },
-  }
-
-  const s = statusConfig[file ? "uploaded" : status]
+  const hasFile = !!localFile
 
   return (
-    <div className={cn("rounded-xl border bg-white/[0.02] p-4 transition-colors", s.border)}>
+    <div className={cn(
+      "rounded-xl border bg-white/[0.02] p-4 transition-colors",
+      hasFile ? "border-blue-500/20" : "border-white/[0.06]"
+    )}>
       <div className="flex items-start gap-3">
         <div className="w-10 h-10 rounded-lg bg-white/[0.04] flex items-center justify-center shrink-0">
           <Icon className="w-5 h-5 text-muted-foreground" />
@@ -100,14 +108,14 @@ function DocumentUpload({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
             <span className="text-sm font-medium text-foreground">{label}</span>
-            {s.badge}
+            {hasFile && <GlassBadge variant="blue" size="sm">Uploaded</GlassBadge>}
           </div>
           <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>
 
-          {file && (
+          {localFile && (
             <div className="mt-2 flex items-center gap-2 text-xs text-emerald-400">
               <CheckCircle2 className="w-3.5 h-3.5" />
-              <span className="truncate">{file.name}</span>
+              <span className="truncate">{localFile}</span>
             </div>
           )}
         </div>
@@ -129,7 +137,7 @@ function DocumentUpload({
           >
             {uploading ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : file ? (
+            ) : hasFile ? (
               "Replace"
             ) : (
               <>
@@ -147,26 +155,59 @@ function DocumentUpload({
 // ─── Main Page ───
 
 export default function VerifyPage() {
-  const [idFront, setIdFront] = useState<File | null>(null)
-  const [idBack, setIdBack] = useState<File | null>(null)
-  const [selfie, setSelfie] = useState<File | null>(null)
-  const [proofOfAddress, setProofOfAddress] = useState<File | null>(null)
+  const [currentLevel, setCurrentLevel] = useState<VerificationLevel>("basic")
+  const [pendingSubmission, setPendingSubmission] = useState<KycSubmission | null>(null)
+  const [uploadedDocs, setUploadedDocs] = useState<Record<string, KycDocument>>({})
   const [submitting, setSubmitting] = useState(false)
+  const [loading, setLoading] = useState(true)
 
-  const currentLevel: VerificationLevel = "basic" // mock
+  const loadStatus = useCallback(async () => {
+    const { level, submission } = await getVerificationStatus()
+    setCurrentLevel(level)
+    setPendingSubmission(submission)
+    if (submission?.documents) {
+      const m: Record<string, KycDocument> = {}
+      for (const d of submission.documents) m[d.document_type] = d
+      setUploadedDocs(m)
+    }
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { loadStatus() }, [loadStatus])
+
+  const handleDocUploaded = (doc: KycDocument) => {
+    setUploadedDocs((prev) => ({ ...prev, [doc.document_type]: doc }))
+  }
 
   const handleSubmit = async () => {
-    if (!idFront) {
+    if (!uploadedDocs["id_front"]) {
       toast.error("Please upload the front of your ID document")
       return
     }
     setSubmitting(true)
-    await new Promise((r) => setTimeout(r, 2000))
-    toast.success("Documents submitted for review!", {
-      description: "You'll be notified once verification is complete. This usually takes 1-2 business days.",
-    })
+    const docs = Object.values(uploadedDocs)
+    const targetLevel = currentLevel === "basic" ? "enhanced" : "full"
+    const { error } = await submitKycVerification(targetLevel as "enhanced" | "full", docs)
+    if (error) {
+      toast.error(error)
+    } else {
+      toast.success("Documents submitted for review!", {
+        description: "You'll be notified once verification is complete. This usually takes 1-2 business days.",
+      })
+      await loadStatus()
+    }
     setSubmitting(false)
   }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  const hasPending = !!pendingSubmission
 
   return (
     <div className="space-y-8 pb-20 md:pb-0">
@@ -197,23 +238,52 @@ export default function VerifyPage() {
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-foreground">Current Level</span>
-                <GlassBadge variant="emerald" size="sm">Basic — Tier 1</GlassBadge>
+                <GlassBadge variant="emerald" size="sm">
+                  {currentLevel === "basic" ? "Basic — Tier 1" : currentLevel === "enhanced" ? "Enhanced — Tier 2" : "Full — Tier 3"}
+                </GlassBadge>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Complete Enhanced verification to unlock debit card and higher limits
+                {currentLevel === "full"
+                  ? "You have the highest verification level"
+                  : currentLevel === "enhanced"
+                    ? "Complete Full verification for unlimited transactions"
+                    : "Complete Enhanced verification to unlock debit card and higher limits"}
               </p>
             </div>
           </div>
         </GlassCard>
       </div>
 
+      {/* Pending Submission Banner */}
+      {hasPending && (
+        <div className="animate-fade-in">
+          <GlassCard padding="md" className="border-blue-500/20 bg-blue-500/5">
+            <div className="flex items-center gap-3">
+              <Clock className="w-5 h-5 text-blue-400" />
+              <div>
+                <span className="text-sm font-medium text-foreground">Verification In Progress</span>
+                <p className="text-xs text-muted-foreground">
+                  Your {pendingSubmission.target_level} verification is {pendingSubmission.status === "pending" ? "pending review" : "under review"}.
+                  Submitted {new Date(pendingSubmission.submitted_at).toLocaleDateString()}.
+                </p>
+              </div>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
       {/* Verification Tiers */}
       <div className="animate-fade-in-up" style={{ animationDelay: "150ms" }}>
         <GlassContainer header={{ title: "Verification Tiers", description: "Higher tiers unlock more features and limits" }}>
           <div className="space-y-4">
             {levels.map((level, idx) => {
-              const isCompleted = level.id === "basic"
-              const isCurrent = level.id === "enhanced"
+              const isCompleted =
+                (level.id === "basic") ||
+                (level.id === "enhanced" && (currentLevel === "enhanced" || currentLevel === "full")) ||
+                (level.id === "full" && currentLevel === "full")
+              const isCurrent =
+                (level.id === "enhanced" && currentLevel === "basic") ||
+                (level.id === "full" && currentLevel === "enhanced")
               return (
                 <div
                   key={level.id}
@@ -263,76 +333,83 @@ export default function VerifyPage() {
       </div>
 
       {/* Document Upload Section */}
-      <div className="animate-fade-in-up" style={{ animationDelay: "250ms" }}>
-        <GlassContainer header={{ title: "Upload Documents", description: "Required for Enhanced (Tier 2) verification" }}>
-          <div className="space-y-3">
-            <DocumentUpload
-              label="Government ID — Front"
-              description="Passport, driver's license or national ID card (front side)"
-              accept="image/*,.pdf"
-              icon={FileText}
-              file={idFront}
-              onFile={setIdFront}
-              status="idle"
-            />
-            <DocumentUpload
-              label="Government ID — Back"
-              description="Back side of your ID (skip for passports)"
-              accept="image/*,.pdf"
-              icon={FileText}
-              file={idBack}
-              onFile={setIdBack}
-              status="idle"
-            />
-            <DocumentUpload
-              label="Selfie Verification"
-              description="Take a clear selfie holding your ID next to your face"
-              accept="image/*"
-              icon={Camera}
-              file={selfie}
-              onFile={setSelfie}
-              status="idle"
-            />
-            <DocumentUpload
-              label="Proof of Address"
-              description="Utility bill or bank statement dated within the last 3 months"
-              accept="image/*,.pdf"
-              icon={MapPin}
-              file={proofOfAddress}
-              onFile={setProofOfAddress}
-              status="idle"
-            />
-          </div>
+      {currentLevel !== "full" && !hasPending && (
+        <div className="animate-fade-in-up" style={{ animationDelay: "250ms" }}>
+          <GlassContainer header={{
+            title: "Upload Documents",
+            description: currentLevel === "basic"
+              ? "Required for Enhanced (Tier 2) verification"
+              : "Required for Full (Tier 3) verification"
+          }}>
+            <div className="space-y-3">
+              <DocumentUpload
+                label="Government ID — Front"
+                description="Passport, driver's license or national ID card (front side)"
+                accept="image/*,.pdf"
+                icon={FileText}
+                documentType="id_front"
+                existingDoc={uploadedDocs["id_front"] ?? null}
+                onUploaded={handleDocUploaded}
+              />
+              <DocumentUpload
+                label="Government ID — Back"
+                description="Back side of your ID (skip for passports)"
+                accept="image/*,.pdf"
+                icon={FileText}
+                documentType="id_back"
+                existingDoc={uploadedDocs["id_back"] ?? null}
+                onUploaded={handleDocUploaded}
+              />
+              <DocumentUpload
+                label="Selfie Verification"
+                description="Take a clear selfie holding your ID next to your face"
+                accept="image/*"
+                icon={Camera}
+                documentType="selfie"
+                existingDoc={uploadedDocs["selfie"] ?? null}
+                onUploaded={handleDocUploaded}
+              />
+              <DocumentUpload
+                label="Proof of Address"
+                description="Utility bill or bank statement dated within the last 3 months"
+                accept="image/*,.pdf"
+                icon={MapPin}
+                documentType="proof_of_address"
+                existingDoc={uploadedDocs["proof_of_address"] ?? null}
+                onUploaded={handleDocUploaded}
+              />
+            </div>
 
-          <div className="mt-6">
-            <Button
-              onClick={handleSubmit}
-              disabled={!idFront || submitting}
-              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium tracking-wide h-11"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Submitting…
-                </>
-              ) : (
-                <>
-                  <Shield className="w-4 h-4 mr-2" />
-                  Submit for Verification
-                </>
-              )}
-            </Button>
-          </div>
+            <div className="mt-6">
+              <Button
+                onClick={handleSubmit}
+                disabled={!uploadedDocs["id_front"] || submitting}
+                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium tracking-wide h-11"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Submitting…
+                  </>
+                ) : (
+                  <>
+                    <Shield className="w-4 h-4 mr-2" />
+                    Submit for Verification
+                  </>
+                )}
+              </Button>
+            </div>
 
-          <div className="mt-4 flex items-start gap-2 px-3 py-2.5 rounded-lg bg-white/[0.02] border border-white/[0.06]">
-            <Shield className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
-              Documents are encrypted with AES-256 and processed on secure servers. Verification typically
-              completes within 24 hours. You&apos;ll receive a notification when your status is updated.
-            </p>
-          </div>
-        </GlassContainer>
-      </div>
+            <div className="mt-4 flex items-start gap-2 px-3 py-2.5 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+              <Shield className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Documents are encrypted with AES-256 and processed on secure servers. Verification typically
+                completes within 24 hours. You&apos;ll receive a notification when your status is updated.
+              </p>
+            </div>
+          </GlassContainer>
+        </div>
+      )}
     </div>
   )
 }

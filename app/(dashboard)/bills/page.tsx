@@ -1,6 +1,15 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
+import {
+  getBills,
+  addBill,
+  payBill,
+  payAllDueBills,
+  toggleAutopay,
+  removeBill,
+  type UserBill,
+} from "@/lib/actions/bills"
 import {
   Receipt,
   Plus,
@@ -53,25 +62,6 @@ const billerCategories = [
   { id: "insurance", label: "Insurance", icon: Building2, color: "text-amber-400" },
 ]
 
-interface Bill {
-  id: string
-  billerName: string
-  categoryId: string
-  accountNumber: string
-  amount: number
-  dueDate: string
-  status: "due" | "paid" | "overdue" | "upcoming"
-  autopay: boolean
-}
-
-const mockBills: Bill[] = [
-  { id: "bl1", billerName: "DEWA", categoryId: "electricity", accountNumber: "****4829", amount: 385.00, dueDate: "Mar 10, 2026", status: "due", autopay: true },
-  { id: "bl2", billerName: "Etisalat", categoryId: "internet", accountNumber: "****7712", amount: 399.00, dueDate: "Mar 15, 2026", status: "upcoming", autopay: true },
-  { id: "bl3", billerName: "du Mobile", categoryId: "phone", accountNumber: "****3301", amount: 149.00, dueDate: "Mar 5, 2026", status: "overdue", autopay: false },
-  { id: "bl4", billerName: "Netflix", categoryId: "tv", accountNumber: "****8890", amount: 55.99, dueDate: "Mar 20, 2026", status: "upcoming", autopay: true },
-  { id: "bl5", billerName: "AXA Insurance", categoryId: "insurance", accountNumber: "POL-2289", amount: 1200.00, dueDate: "Apr 1, 2026", status: "upcoming", autopay: false },
-]
-
 const statusConfig: Record<string, { label: string; badge: "emerald" | "amber" | "red" | "blue" }> = {
   paid: { label: "Paid", badge: "emerald" },
   due: { label: "Due Soon", badge: "amber" },
@@ -80,12 +70,22 @@ const statusConfig: Record<string, { label: string; badge: "emerald" | "amber" |
 }
 
 export default function BillsPage() {
-  const [bills, setBills] = useState<Bill[]>(mockBills)
+  const [bills, setBills] = useState<UserBill[]>([])
+  const [pageLoading, setPageLoading] = useState(true)
   const [showAddBiller, setShowAddBiller] = useState(false)
   const [showPayDialog, setShowPayDialog] = useState<string | null>(null)
   const [paying, setPaying] = useState(false)
   const [newBiller, setNewBiller] = useState({ name: "", categoryId: "", account: "" })
   const [searchQuery, setSearchQuery] = useState("")
+
+  const loadBills = useCallback(async () => {
+    setPageLoading(true)
+    const data = await getBills()
+    setBills(data)
+    setPageLoading(false)
+  }, [])
+
+  useEffect(() => { loadBills() }, [loadBills])
 
   const totalDue = bills.filter((b) => b.status === "due" || b.status === "overdue").reduce((s, b) => s + b.amount, 0)
   const overdue = bills.filter((b) => b.status === "overdue").length
@@ -97,32 +97,44 @@ export default function BillsPage() {
 
   const handlePayBill = async (billId: string) => {
     setPaying(true)
-    await new Promise((r) => setTimeout(r, 1500))
-    setBills(bills.map((b) => b.id === billId ? { ...b, status: "paid" as const } : b))
-    const bill = bills.find((b) => b.id === billId)!
-    toast.success(`${bill.billerName} paid!`, {
-      description: `$${bill.amount.toFixed(2)} debited from your wallet`,
-    })
+    const res = await payBill(billId)
+    if (res.success) {
+      setBills(bills.map((b) => b.id === billId ? { ...b, status: "paid" as const } : b))
+      const bill = bills.find((b) => b.id === billId)!
+      toast.success(`${bill.billerName} paid!`, {
+        description: `$${bill.amount.toFixed(2)} debited from your wallet`,
+      })
+    } else {
+      toast.error("Payment failed")
+    }
     setShowPayDialog(null)
     setPaying(false)
   }
 
   const handlePayAll = async () => {
     setPaying(true)
-    await new Promise((r) => setTimeout(r, 2000))
-    setBills(bills.map((b) =>
-      b.status === "due" || b.status === "overdue" ? { ...b, status: "paid" as const } : b
-    ))
-    toast.success(`All due bills paid!`, {
-      description: `$${totalDue.toFixed(2)} total debited`,
-    })
+    const res = await payAllDueBills()
+    if (res.success) {
+      setBills(bills.map((b) =>
+        b.status === "due" || b.status === "overdue" ? { ...b, status: "paid" as const } : b
+      ))
+      toast.success(`All due bills paid!`, {
+        description: `$${totalDue.toFixed(2)} total debited`,
+      })
+    } else {
+      toast.error("Payment failed")
+    }
     setPaying(false)
   }
 
-  const handleToggleAutopay = (billId: string) => {
-    setBills(bills.map((b) => b.id === billId ? { ...b, autopay: !b.autopay } : b))
-    const bill = bills.find((b) => b.id === billId)!
-    toast.success(bill.autopay ? `Autopay disabled for ${bill.billerName}` : `Autopay enabled for ${bill.billerName}`)
+  const handleToggleAutopay = async (billId: string) => {
+    const bill = bills.find((b) => b.id === billId)
+    if (!bill) return
+    const res = await toggleAutopay(billId)
+    if (res.success) {
+      setBills(bills.map((b) => b.id === billId ? { ...b, autopay: res.newValue } : b))
+      toast.success(res.newValue ? `Autopay enabled for ${bill.billerName}` : `Autopay disabled for ${bill.billerName}`)
+    }
   }
 
   const handleAddBiller = async () => {
@@ -131,30 +143,38 @@ export default function BillsPage() {
       return
     }
     setPaying(true)
-    await new Promise((r) => setTimeout(r, 800))
-    setBills([
-      {
-        id: `bl${Date.now()}`,
-        billerName: newBiller.name,
-        categoryId: newBiller.categoryId,
-        accountNumber: `****${newBiller.account.slice(-4)}`,
-        amount: 0,
-        dueDate: "—",
-        status: "upcoming",
-        autopay: false,
-      },
-      ...bills,
-    ])
-    toast.success(`${newBiller.name} added`)
+    const res = await addBill({
+      billerName: newBiller.name,
+      categoryId: newBiller.categoryId,
+      accountNumber: newBiller.account,
+    })
+    if (res.success && res.bill) {
+      setBills([res.bill, ...bills])
+      toast.success(`${newBiller.name} added`)
+    } else {
+      toast.error("Failed to add biller")
+    }
     setShowAddBiller(false)
     setNewBiller({ name: "", categoryId: "", account: "" })
     setPaying(false)
   }
 
-  const handleRemoveBiller = (billId: string) => {
-    const bill = bills.find((b) => b.id === billId)!
-    setBills(bills.filter((b) => b.id !== billId))
-    toast.success(`${bill.billerName} removed`)
+  const handleRemoveBiller = async (billId: string) => {
+    const bill = bills.find((b) => b.id === billId)
+    if (!bill) return
+    const res = await removeBill(billId)
+    if (res.success) {
+      setBills(bills.filter((b) => b.id !== billId))
+      toast.success(`${bill.billerName} removed`)
+    }
+  }
+
+  if (pageLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    )
   }
 
   return (

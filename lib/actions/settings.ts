@@ -140,6 +140,90 @@ export async function updateUserSettings(
   return { data }
 }
 
+// ─── Notification Preferences (JSONB) ───
+
+export interface NotificationCategoryPrefs {
+  push: boolean
+  email: boolean
+  sound: boolean
+}
+
+export interface NotificationPreferences {
+  categories: Record<string, NotificationCategoryPrefs>
+  quietHours: {
+    enabled: boolean
+    from: string
+    to: string
+  }
+}
+
+const DEFAULT_NOTIFICATION_PREFS: NotificationPreferences = {
+  categories: {
+    transactions: { push: true, email: true, sound: true },
+    security:     { push: true, email: true, sound: true },
+    marketing:    { push: true, email: false, sound: false },
+    recurring:    { push: true, email: true, sound: false },
+    social:       { push: true, email: false, sound: true },
+    savings:      { push: true, email: false, sound: false },
+    referrals:    { push: true, email: true, sound: false },
+    rewards:      { push: true, email: false, sound: false },
+  },
+  quietHours: { enabled: false, from: '22:00', to: '07:00' },
+}
+
+export async function getNotificationPreferences(): Promise<{ data: NotificationPreferences; error?: string }> {
+  const supabase = await createClient()
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError || !user) return { data: DEFAULT_NOTIFICATION_PREFS, error: 'Not authenticated' }
+
+  const { data, error } = await supabase
+    .from('user_settings')
+    .select('notification_preferences')
+    .eq('id', user.id)
+    .single()
+
+  if (error || !data?.notification_preferences) {
+    // Return defaults if no row or column is null
+    return { data: DEFAULT_NOTIFICATION_PREFS }
+  }
+
+  // Merge with defaults so new categories always appear
+  const stored = data.notification_preferences as NotificationPreferences
+  const merged: NotificationPreferences = {
+    categories: { ...DEFAULT_NOTIFICATION_PREFS.categories, ...stored.categories },
+    quietHours: stored.quietHours ?? DEFAULT_NOTIFICATION_PREFS.quietHours,
+  }
+  return { data: merged }
+}
+
+export async function updateNotificationPreferences(
+  prefs: NotificationPreferences
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createClient()
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError || !user) return { success: false, error: 'Not authenticated' }
+
+  const { error } = await supabase
+    .from('user_settings')
+    .update({ notification_preferences: prefs as unknown as Record<string, unknown> })
+    .eq('id', user.id)
+
+  if (error) {
+    // Row doesn't exist – upsert
+    if (error.code === 'PGRST116' || error.message.includes('0 rows')) {
+      const { error: upsertErr } = await supabase
+        .from('user_settings')
+        .upsert({ id: user.id, ...DEFAULTS, notification_preferences: prefs as unknown as Record<string, unknown> })
+      if (upsertErr) return { success: false, error: upsertErr.message }
+      return { success: true }
+    }
+    return { success: false, error: error.message }
+  }
+
+  revalidatePath('/settings/notifications')
+  return { success: true }
+}
+
 // ─── Export Transactions CSV ───
 
 export async function exportTransactionsCSV(): Promise<{ csv?: string; error?: string }> {

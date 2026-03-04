@@ -1,6 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
+import {
+  getBankAccounts,
+  addBankAccount,
+  setDefaultAccount,
+  removeBankAccount,
+  type BankAccount,
+} from "@/lib/actions/bank-accounts"
 import {
   Building2,
   Plus,
@@ -32,51 +39,6 @@ import {
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
-// ─── Mock Data ───
-
-interface BankAccount {
-  id: string
-  nickname: string
-  bankName: string
-  type: "checking" | "savings"
-  method: "ach" | "iban" | "plaid"
-  last4: string
-  routingOrIban: string
-  currency: string
-  status: "verified" | "pending" | "failed"
-  isDefault: boolean
-  addedAt: string
-}
-
-const mockAccounts: BankAccount[] = [
-  {
-    id: "1",
-    nickname: "Main Checking",
-    bankName: "Chase Bank",
-    type: "checking",
-    method: "plaid",
-    last4: "4829",
-    routingOrIban: "•••••1234",
-    currency: "USD",
-    status: "verified",
-    isDefault: true,
-    addedAt: "2025-11-15",
-  },
-  {
-    id: "2",
-    nickname: "UAE Account",
-    bankName: "Emirates NBD",
-    type: "savings",
-    method: "iban",
-    last4: "7301",
-    routingOrIban: "AE07•••••••••7301",
-    currency: "AED",
-    status: "pending",
-    isDefault: false,
-    addedAt: "2026-02-01",
-  },
-]
-
 const methodLabels: Record<string, { label: string; color: string }> = {
   plaid: { label: "Plaid", color: "emerald" },
   ach: { label: "ACH", color: "blue" },
@@ -90,7 +52,8 @@ const statusStyles: Record<string, { badge: "emerald" | "blue" | "red"; label: s
 }
 
 export default function BankAccountsPage() {
-  const [accounts, setAccounts] = useState<BankAccount[]>(mockAccounts)
+  const [accounts, setAccounts] = useState<BankAccount[]>([])
+  const [pageLoading, setPageLoading] = useState(true)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null)
@@ -104,11 +67,25 @@ export default function BankAccountsPage() {
   const [addIban, setAddIban] = useState("")
   const [addSubmitting, setAddSubmitting] = useState(false)
 
-  const handleSetDefault = (id: string) => {
-    setAccounts((prev) =>
-      prev.map((a) => ({ ...a, isDefault: a.id === id }))
-    )
-    toast.success("Default account updated")
+  const loadAccounts = useCallback(async () => {
+    setPageLoading(true)
+    const data = await getBankAccounts()
+    setAccounts(data)
+    setPageLoading(false)
+  }, [])
+
+  useEffect(() => { loadAccounts() }, [loadAccounts])
+
+  const handleSetDefault = async (id: string) => {
+    const res = await setDefaultAccount(id)
+    if (res.success) {
+      setAccounts((prev) =>
+        prev.map((a) => ({ ...a, isDefault: a.id === id }))
+      )
+      toast.success("Default account updated")
+    } else {
+      toast.error("Failed to update default")
+    }
   }
 
   const confirmRemove = (id: string) => {
@@ -116,38 +93,47 @@ export default function BankAccountsPage() {
     setRemoveDialogOpen(true)
   }
 
-  const handleRemove = () => {
+  const handleRemove = async () => {
     if (!pendingRemoveId) return
-    setAccounts((prev) => prev.filter((a) => a.id !== pendingRemoveId))
-    toast.success("Bank account removed")
+    const res = await removeBankAccount(pendingRemoveId)
+    if (res.success) {
+      setAccounts((prev) => prev.filter((a) => a.id !== pendingRemoveId))
+      toast.success("Bank account removed")
+    } else {
+      toast.error("Failed to remove account")
+    }
     setRemoveDialogOpen(false)
     setPendingRemoveId(null)
   }
 
   const handleAddAccount = async () => {
     setAddSubmitting(true)
-    await new Promise((r) => setTimeout(r, 1500))
 
-    const newAccount: BankAccount = {
-      id: String(Date.now()),
+    const last4 = addAccountNum.slice(-4) || addIban.slice(-4) || "0000"
+    const routingOrIban =
+      addMethod === "iban"
+        ? addIban.slice(0, 4) + "•••" + addIban.slice(-4)
+        : "•••••" + addRouting.slice(-4)
+
+    const res = await addBankAccount({
       nickname: addNickname || "New Account",
-      bankName: addMethod === "iban" ? "International Bank" : "New Bank",
-      type: "checking",
-      method: addMethod as "plaid" | "ach" | "iban",
-      last4: addAccountNum.slice(-4) || addIban.slice(-4) || "0000",
-      routingOrIban: addMethod === "iban" ? addIban.slice(0, 4) + "•••" + addIban.slice(-4) : "•••••" + addRouting.slice(-4),
+      method: addMethod as "ach" | "iban" | "plaid",
+      last4,
+      routingOrIban,
       currency: addMethod === "iban" ? "AED" : "USD",
-      status: addMethod === "plaid" ? "verified" : "pending",
-      isDefault: accounts.length === 0,
-      addedAt: new Date().toISOString().split("T")[0],
-    }
+      bankName: addMethod === "iban" ? "International Bank" : "New Bank",
+    })
 
-    setAccounts((prev) => [...prev, newAccount])
-    toast.success(
-      addMethod === "plaid"
-        ? "Account connected via Plaid!"
-        : "Account added — verification in 1-2 business days"
-    )
+    if (res.success && res.account) {
+      setAccounts((prev) => [...prev, res.account!])
+      toast.success(
+        addMethod === "plaid"
+          ? "Account connected via Plaid!"
+          : "Account added — verification in 1-2 business days"
+      )
+    } else {
+      toast.error("Failed to add account")
+    }
     setAddDialogOpen(false)
     resetAddForm()
     setAddSubmitting(false)
@@ -159,6 +145,14 @@ export default function BankAccountsPage() {
     setAddRouting("")
     setAddAccountNum("")
     setAddIban("")
+  }
+
+  if (pageLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    )
   }
 
   return (
@@ -249,7 +243,7 @@ export default function BankAccountsPage() {
                           <GlassBadge variant={status.badge} size="sm">{status.label}</GlassBadge>
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {account.bankName} · {account.type === "checking" ? "Checking" : "Savings"} · ••••{account.last4}
+                          {account.bankName} · {account.accountType === "checking" ? "Checking" : "Savings"} · ••••{account.last4}
                         </p>
                         <div className="flex items-center gap-3 mt-2">
                           <span className="text-[10px] text-white/30 tracking-wide">

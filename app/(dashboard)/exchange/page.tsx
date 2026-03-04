@@ -1,21 +1,16 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import {
   ArrowLeftRight,
-  ChevronDown,
   Loader2,
   TrendingUp,
-  TrendingDown,
   RefreshCw,
   Clock,
   Info,
-  Wallet,
   ArrowRight,
-  Star,
 } from "lucide-react"
-import { GlassCard, GlassContainer, GlassStat } from "@/components/glass"
-import { GlassBadge } from "@/components/glass"
+import { GlassCard, GlassContainer } from "@/components/glass"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -25,69 +20,57 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { toast } from "sonner"
-import { cn } from "@/lib/utils"
+import {
+  getExchangeData,
+  executeExchange,
+  type CurrencyWallet,
+  type CurrencyExchange,
+} from "@/lib/actions/exchange"
 
-// ─── Currency Config ───
+// ─── Static currency metadata ───
 
-interface Currency {
-  code: string
-  name: string
-  symbol: string
-  flag: string
-  balance: number
+const currencyMeta: Record<string, { name: string; symbol: string; flag: string }> = {
+  USD: { name: "US Dollar", symbol: "$", flag: "🇺🇸" },
+  AED: { name: "UAE Dirham", symbol: "د.إ", flag: "🇦🇪" },
+  EUR: { name: "Euro", symbol: "€", flag: "🇪🇺" },
+  GBP: { name: "British Pound", symbol: "£", flag: "🇬🇧" },
 }
-
-const currencies: Currency[] = [
-  { code: "USD", name: "US Dollar", symbol: "$", flag: "🇺🇸", balance: 4825.50 },
-  { code: "AED", name: "UAE Dirham", symbol: "د.إ", flag: "🇦🇪", balance: 12340.00 },
-  { code: "EUR", name: "Euro", symbol: "€", flag: "🇪🇺", balance: 1250.75 },
-  { code: "GBP", name: "British Pound", symbol: "£", flag: "🇬🇧", balance: 890.20 },
-]
-
-// Mock rates (base: USD)
-const mockRates: Record<string, number> = {
-  "USD-AED": 3.6725,
-  "USD-EUR": 0.9215,
-  "USD-GBP": 0.7890,
-  "AED-USD": 0.2723,
-  "AED-EUR": 0.2510,
-  "AED-GBP": 0.2149,
-  "EUR-USD": 1.0852,
-  "EUR-AED": 3.9862,
-  "EUR-GBP": 0.8562,
-  "GBP-USD": 1.2674,
-  "GBP-AED": 4.6551,
-  "GBP-EUR": 1.1680,
-}
-
-interface RecentSwap {
-  id: string
-  from: string
-  to: string
-  fromAmount: number
-  toAmount: number
-  rate: number
-  date: string
-}
-
-const recentSwaps: RecentSwap[] = [
-  { id: "r1", from: "USD", to: "AED", fromAmount: 500, toAmount: 1836.25, rate: 3.6725, date: "Feb 28, 2026" },
-  { id: "r2", from: "EUR", to: "USD", fromAmount: 200, toAmount: 217.04, rate: 1.0852, date: "Feb 25, 2026" },
-  { id: "r3", from: "GBP", to: "AED", fromAmount: 100, toAmount: 465.51, rate: 4.6551, date: "Feb 20, 2026" },
-  { id: "r4", from: "USD", to: "EUR", fromAmount: 1000, toAmount: 921.50, rate: 0.9215, date: "Feb 15, 2026" },
-]
 
 export default function ExchangePage() {
   const [fromCurrency, setFromCurrency] = useState("USD")
   const [toCurrency, setToCurrency] = useState("AED")
   const [amount, setAmount] = useState("")
   const [converting, setConverting] = useState(false)
-  const [lastRefresh, setLastRefresh] = useState(new Date())
+  const [loading, setLoading] = useState(true)
 
-  const rate = mockRates[`${fromCurrency}-${toCurrency}`] ?? 1
-  const converted = amount ? (parseFloat(amount) * rate) : 0
-  const fromC = currencies.find((c) => c.code === fromCurrency)!
-  const toC = currencies.find((c) => c.code === toCurrency)!
+  const [rates, setRates] = useState<Record<string, number>>({})
+  const [wallets, setWallets] = useState<CurrencyWallet[]>([])
+  const [recentExchanges, setRecentExchanges] = useState<CurrencyExchange[]>([])
+  const [ratesUpdatedAt, setRatesUpdatedAt] = useState("")
+
+  const loadData = useCallback(async () => {
+    const res = await getExchangeData()
+    if (res.error) {
+      toast.error(res.error)
+      setLoading(false)
+      return
+    }
+    if (res.data) {
+      setRates(res.data.rates)
+      setWallets(res.data.wallets)
+      setRecentExchanges(res.data.recentExchanges)
+      setRatesUpdatedAt(res.data.ratesUpdatedAt)
+    }
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  const rate = rates[`${fromCurrency}-${toCurrency}`] ?? 1
+  const converted = amount ? parseFloat(amount) * rate : 0
+  const fromWallet = wallets.find((w) => w.currency === fromCurrency)
+  const fromMeta = currencyMeta[fromCurrency] ?? { name: fromCurrency, symbol: "", flag: "💱" }
+  const toMeta = currencyMeta[toCurrency] ?? { name: toCurrency, symbol: "", flag: "💱" }
 
   const handleSwapCurrencies = () => {
     setFromCurrency(toCurrency)
@@ -95,27 +78,49 @@ export default function ExchangePage() {
   }
 
   const handleConvert = async () => {
-    if (!amount || parseFloat(amount) <= 0) {
+    const num = parseFloat(amount)
+    if (!amount || num <= 0) {
       toast.error("Enter a valid amount")
       return
     }
-    if (parseFloat(amount) > fromC.balance) {
+    if (fromWallet && num > fromWallet.balance) {
       toast.error(`Insufficient ${fromCurrency} balance`)
       return
     }
     setConverting(true)
-    await new Promise((r) => setTimeout(r, 1800))
-    toast.success("Conversion complete!", {
-      description: `${fromC.symbol}${parseFloat(amount).toLocaleString()} → ${toC.symbol}${converted.toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
-    })
-    setAmount("")
+    const res = await executeExchange({ fromCurrency, toCurrency, amount: num })
+    if (res.error) {
+      toast.error(res.error)
+    } else if (res.data) {
+      toast.success("Conversion complete!", {
+        description: `${fromMeta.symbol}${num.toLocaleString()} → ${toMeta.symbol}${converted.toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
+      })
+      setWallets(res.data)
+      setAmount("")
+      const fresh = await getExchangeData()
+      if (fresh.data) setRecentExchanges(fresh.data.recentExchanges)
+    }
     setConverting(false)
   }
 
-  const handleRefreshRates = () => {
-    setLastRefresh(new Date())
-    toast.success("Rates refreshed")
+  const handleRefreshRates = async () => {
+    const res = await getExchangeData()
+    if (res.data) {
+      setRates(res.data.rates)
+      setRatesUpdatedAt(res.data.ratesUpdatedAt)
+      toast.success("Rates refreshed")
+    }
   }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  const currencyCodes = wallets.map((w) => w.currency)
 
   return (
     <div className="space-y-8 pb-20 md:pb-0">
@@ -144,17 +149,20 @@ export default function ExchangePage() {
 
       {/* Wallet Balances */}
       <div className="animate-fade-in grid grid-cols-2 sm:grid-cols-4 gap-3" style={{ animationDelay: "100ms" }}>
-        {currencies.map((c) => (
-          <GlassCard key={c.code} padding="sm">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-lg">{c.flag}</span>
-              <span className="text-xs text-muted-foreground font-medium">{c.code}</span>
-            </div>
-            <span className="text-lg font-semibold text-foreground font-mono">
-              {c.symbol}{c.balance.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-            </span>
-          </GlassCard>
-        ))}
+        {wallets.map((w) => {
+          const meta = currencyMeta[w.currency] ?? { name: w.currency, symbol: "", flag: "💱" }
+          return (
+            <GlassCard key={w.currency} padding="sm">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-lg">{meta.flag}</span>
+                <span className="text-xs text-muted-foreground font-medium">{w.currency}</span>
+              </div>
+              <span className="text-lg font-semibold text-foreground font-mono">
+                {meta.symbol}{w.balance.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+              </span>
+            </GlassCard>
+          )
+        })}
       </div>
 
       {/* Conversion Card */}
@@ -181,10 +189,10 @@ export default function ExchangePage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {currencies.filter((c) => c.code !== toCurrency).map((c) => (
-                      <SelectItem key={c.code} value={c.code}>
+                    {currencyCodes.filter((c) => c !== toCurrency).map((c) => (
+                      <SelectItem key={c} value={c}>
                         <span className="flex items-center gap-2">
-                          <span>{c.flag}</span> {c.code}
+                          <span>{currencyMeta[c]?.flag ?? "💱"}</span> {c}
                         </span>
                       </SelectItem>
                     ))}
@@ -192,7 +200,7 @@ export default function ExchangePage() {
                 </Select>
               </div>
               <span className="text-xs text-muted-foreground mt-1.5 block">
-                Balance: {fromC.symbol}{fromC.balance.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                Balance: {fromMeta.symbol}{(fromWallet?.balance ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
               </span>
             </div>
 
@@ -222,10 +230,10 @@ export default function ExchangePage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {currencies.filter((c) => c.code !== fromCurrency).map((c) => (
-                      <SelectItem key={c.code} value={c.code}>
+                    {currencyCodes.filter((c) => c !== fromCurrency).map((c) => (
+                      <SelectItem key={c} value={c}>
                         <span className="flex items-center gap-2">
-                          <span>{c.flag}</span> {c.code}
+                          <span>{currencyMeta[c]?.flag ?? "💱"}</span> {c}
                         </span>
                       </SelectItem>
                     ))}
@@ -242,7 +250,7 @@ export default function ExchangePage() {
               </div>
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Clock className="w-3 h-3" />
-                <span>Updated {lastRefresh.toLocaleTimeString()}</span>
+                <span>{ratesUpdatedAt ? `Updated ${new Date(ratesUpdatedAt).toLocaleTimeString()}` : "Live rate"}</span>
               </div>
             </div>
 
@@ -277,31 +285,41 @@ export default function ExchangePage() {
             description: "Your last currency exchanges",
           }}
         >
-          <div className="divide-y divide-white/[0.06]">
-            {recentSwaps.map((swap) => {
-              const fC = currencies.find((c) => c.code === swap.from)!
-              const tC = currencies.find((c) => c.code === swap.to)!
-              return (
-                <div key={swap.id} className="flex items-center gap-4 py-3 px-1">
-                  <div className="w-9 h-9 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center shrink-0">
-                    <ArrowLeftRight className="w-4 h-4 text-muted-foreground" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 text-sm">
-                      <span className="text-foreground font-medium">{fC.flag} {swap.from}</span>
-                      <ArrowRight className="w-3 h-3 text-muted-foreground" />
-                      <span className="text-foreground font-medium">{tC.flag} {swap.to}</span>
+          {recentExchanges.length === 0 ? (
+            <div className="text-center py-8">
+              <ArrowLeftRight className="w-8 h-8 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">No conversions yet</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">Your exchange history will appear here</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-white/[0.06]">
+              {recentExchanges.map((ex) => {
+                const fMeta = currencyMeta[ex.from_currency] ?? { symbol: "", flag: "💱" }
+                const tMeta = currencyMeta[ex.to_currency] ?? { symbol: "", flag: "💱" }
+                return (
+                  <div key={ex.id} className="flex items-center gap-4 py-3 px-1">
+                    <div className="w-9 h-9 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center shrink-0">
+                      <ArrowLeftRight className="w-4 h-4 text-muted-foreground" />
                     </div>
-                    <span className="text-xs text-muted-foreground">{swap.date} · Rate: {swap.rate}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 text-sm">
+                        <span className="text-foreground font-medium">{fMeta.flag} {ex.from_currency}</span>
+                        <ArrowRight className="w-3 h-3 text-muted-foreground" />
+                        <span className="text-foreground font-medium">{tMeta.flag} {ex.to_currency}</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(ex.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} · Rate: {ex.rate}
+                      </span>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-sm text-red-400 font-mono block">-{fMeta.symbol}{ex.from_amount.toLocaleString()}</span>
+                      <span className="text-sm text-emerald-400 font-mono block">+{tMeta.symbol}{ex.to_amount.toLocaleString()}</span>
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <span className="text-sm text-red-400 font-mono block">-{fC.symbol}{swap.fromAmount.toLocaleString()}</span>
-                    <span className="text-sm text-emerald-400 font-mono block">+{tC.symbol}{swap.toAmount.toLocaleString()}</span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </GlassContainer>
       </div>
 

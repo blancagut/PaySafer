@@ -1,6 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
+import {
+  getDebitCard,
+  toggleFreezeCard,
+  toggleCardSetting,
+  replaceCard as replaceCardAction,
+  changePin,
+  type DebitCard,
+} from "@/lib/actions/debit-card"
 import {
   CreditCard,
   Lock,
@@ -36,40 +44,6 @@ import {
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
-// ─── Mock card data ───
-
-interface CardData {
-  id: string
-  tier: "standard" | "gold" | "platinum"
-  last4: string
-  expiry: string
-  status: "active" | "frozen" | "inactive" | "expired"
-  type: "virtual" | "physical"
-  dailyLimit: number
-  monthlyLimit: number
-  atmLimit: number
-  contactless: boolean
-  onlinePurchases: boolean
-  internationalPayments: boolean
-  magStripe: boolean
-}
-
-const mockCard: CardData = {
-  id: "card_1",
-  tier: "gold",
-  last4: "8421",
-  expiry: "03/28",
-  status: "active",
-  type: "physical",
-  dailyLimit: 15000,
-  monthlyLimit: 50000,
-  atmLimit: 2000,
-  contactless: true,
-  onlinePurchases: true,
-  internationalPayments: true,
-  magStripe: false,
-}
-
 const tierConfig = {
   standard: { label: "Standard", color: "emerald", bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500/20" },
   gold: { label: "Gold", color: "amber", bg: "bg-amber-500/10", text: "text-amber-400", border: "border-amber-500/20" },
@@ -83,51 +57,113 @@ const statusConfig = {
   expired: { label: "Expired", badge: "red" as const },
 }
 
+const DB_KEY_MAP: Record<string, "contactless" | "online_purchases" | "international_payments" | "mag_stripe"> = {
+  contactless: "contactless",
+  onlinePurchases: "online_purchases",
+  internationalPayments: "international_payments",
+  magStripe: "mag_stripe",
+}
+
 export default function CardManagePage() {
-  const [card, setCard] = useState<CardData>(mockCard)
+  const [card, setCard] = useState<DebitCard | null>(null)
+  const [pageLoading, setPageLoading] = useState(true)
   const [showPin, setShowPin] = useState(false)
   const [showDetails, setShowDetails] = useState(false)
   const [freezeDialogOpen, setFreezeDialogOpen] = useState(false)
   const [replaceDialogOpen, setReplaceDialogOpen] = useState(false)
   const [pinDialogOpen, setPinDialogOpen] = useState(false)
   const [loading, setLoading] = useState("")
+  const [replaceReason, setReplaceReason] = useState("")
+  const [newPin, setNewPin] = useState("")
+  const [confirmPin, setConfirmPin] = useState("")
+
+  const loadCard = useCallback(async () => {
+    setPageLoading(true)
+    const data = await getDebitCard()
+    setCard(data)
+    setPageLoading(false)
+  }, [])
+
+  useEffect(() => { loadCard() }, [loadCard])
+
+  if (pageLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (!card) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <CreditCard className="w-10 h-10 text-muted-foreground" />
+        <p className="text-muted-foreground">No debit card found. Apply for one in the Debit Card section.</p>
+      </div>
+    )
+  }
 
   const tier = tierConfig[card.tier]
   const status = statusConfig[card.status]
 
   const handleFreeze = async () => {
     setLoading("freeze")
-    await new Promise((r) => setTimeout(r, 1000))
-    const newStatus = card.status === "frozen" ? "active" : "frozen"
-    setCard((c) => ({ ...c, status: newStatus }))
-    toast.success(newStatus === "frozen" ? "Card frozen instantly" : "Card unfrozen — ready to use")
+    const res = await toggleFreezeCard(card.id)
+    if (res.success) {
+      setCard((c) => c ? { ...c, status: res.newStatus as DebitCard["status"] } : c)
+      toast.success(res.newStatus === "frozen" ? "Card frozen instantly" : "Card unfrozen — ready to use")
+    } else {
+      toast.error("Failed to update card status")
+    }
     setFreezeDialogOpen(false)
     setLoading("")
   }
 
-  const handleToggle = async (key: keyof CardData) => {
+  const handleToggle = async (key: keyof DebitCard) => {
+    const dbKey = DB_KEY_MAP[key]
+    if (!dbKey) return
     setLoading(key)
-    await new Promise((r) => setTimeout(r, 500))
-    setCard((c) => ({ ...c, [key]: !c[key] }))
-    toast.success("Setting updated")
+    const res = await toggleCardSetting(card.id, dbKey)
+    if (res.success) {
+      setCard((c) => c ? { ...c, [key]: res.newValue } : c)
+      toast.success("Setting updated")
+    } else {
+      toast.error("Failed to update setting")
+    }
     setLoading("")
   }
 
   const handleReplace = async () => {
     setLoading("replace")
-    await new Promise((r) => setTimeout(r, 1500))
-    toast.success("Replacement card ordered!", {
-      description: "Your new card will arrive in 5-7 business days.",
-    })
+    const res = await replaceCardAction(card.id, replaceReason || "Other")
+    if (res.success) {
+      toast.success("Replacement card ordered!", {
+        description: "Your new card will arrive in 5-7 business days.",
+      })
+      loadCard()
+    } else {
+      toast.error("Failed to order replacement")
+    }
     setReplaceDialogOpen(false)
+    setReplaceReason("")
     setLoading("")
   }
 
   const handleSetPin = async () => {
+    if (newPin.length !== 4 || newPin !== confirmPin) {
+      toast.error(newPin.length !== 4 ? "PIN must be 4 digits" : "PINs do not match")
+      return
+    }
     setLoading("pin")
-    await new Promise((r) => setTimeout(r, 1000))
-    toast.success("PIN updated successfully")
+    const res = await changePin(card.id, "", newPin)
+    if (res.success) {
+      toast.success("PIN updated successfully")
+    } else {
+      toast.error(res.error || "Failed to update PIN")
+    }
     setPinDialogOpen(false)
+    setNewPin("")
+    setConfirmPin("")
     setLoading("")
   }
 
@@ -169,7 +205,7 @@ export default function CardManagePage() {
                     </GlassBadge>
                   </div>
                   <p className="text-sm text-muted-foreground mt-0.5">
-                    {card.type === "physical" ? "Physical" : "Virtual"} · •••• {card.last4} · Exp {card.expiry}
+                    {card.cardType === "physical" ? "Physical" : "Virtual"} · •••• {card.last4} · Exp {card.expiry}
                   </p>
                 </div>
               </div>
@@ -402,7 +438,13 @@ export default function CardManagePage() {
             {["Lost / Stolen", "Damaged", "Compromised", "Other"].map((reason) => (
               <button
                 key={reason}
-                className="w-full text-left px-4 py-3 rounded-lg border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05] text-sm text-foreground transition-colors"
+                onClick={() => setReplaceReason(reason)}
+                className={cn(
+                  "w-full text-left px-4 py-3 rounded-lg border text-sm text-foreground transition-colors",
+                  replaceReason === reason
+                    ? "border-primary bg-primary/10"
+                    : "border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05]"
+                )}
               >
                 {reason}
               </button>
@@ -440,6 +482,8 @@ export default function CardManagePage() {
                 type="password"
                 maxLength={4}
                 placeholder="••••"
+                value={newPin}
+                onChange={(e) => setNewPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
                 className="w-full h-10 rounded-lg bg-white/[0.04] border border-white/[0.10] px-3 text-center text-lg font-mono tracking-[0.5em] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-emerald-500/50 transition-colors"
               />
             </div>
@@ -451,6 +495,8 @@ export default function CardManagePage() {
                 type="password"
                 maxLength={4}
                 placeholder="••••"
+                value={confirmPin}
+                onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
                 className="w-full h-10 rounded-lg bg-white/[0.04] border border-white/[0.10] px-3 text-center text-lg font-mono tracking-[0.5em] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-emerald-500/50 transition-colors"
               />
             </div>

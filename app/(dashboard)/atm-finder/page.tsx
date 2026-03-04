@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import {
   MapPin,
   Navigation,
@@ -15,6 +15,7 @@ import {
   Building2,
   Info,
   Locate,
+  Loader2,
 } from "lucide-react"
 import { GlassCard } from "@/components/glass"
 import { GlassBadge } from "@/components/glass"
@@ -22,6 +23,7 @@ import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import dynamic from "next/dynamic"
+import { getATMs, type ATMLocation } from "@/lib/actions/atms"
 
 // Dynamically import map to avoid SSR issues
 const ATMMap = dynamic(() => import("@/components/atm-map"), {
@@ -33,7 +35,7 @@ const ATMMap = dynamic(() => import("@/components/atm-map"), {
   ),
 })
 
-// ─── ATM Data ───
+// ─── ATM interface used by the map component ───
 
 interface ATM {
   id: string
@@ -52,56 +54,65 @@ interface ATM {
   rating: number
 }
 
-const mockATMs: ATM[] = [
-  {
-    id: "atm1", name: "ENBD ATM", network: "Emirates NBD", address: "Dubai Mall, Financial Center Road, Downtown Dubai",
-    distance: "0.3 km", distanceMeters: 300, lat: 25.1972, lng: 55.2744, freeWithdrawal: true, fee: 0,
-    currency: "AED", hours: "24/7", features: ["Cardless", "Deposit", "Multi-currency"], rating: 4.8,
-  },
-  {
-    id: "atm2", name: "ADCB ATM", network: "ADCB", address: "Souk Al Bahar, Old Town Island, Downtown Dubai",
-    distance: "0.5 km", distanceMeters: 500, lat: 25.1960, lng: 55.2755, freeWithdrawal: true, fee: 0,
-    currency: "AED", hours: "24/7", features: ["Cardless", "Deposit"], rating: 4.5,
-  },
-  {
-    id: "atm3", name: "Mashreq ATM", network: "Mashreq", address: "Boulevard Plaza, Sheikh Mohammed bin Rashid Blvd",
-    distance: "0.8 km", distanceMeters: 800, lat: 25.1925, lng: 55.2721, freeWithdrawal: true, fee: 0,
-    currency: "AED", hours: "24/7", features: ["Multi-currency"], rating: 4.3,
-  },
-  {
-    id: "atm4", name: "FAB ATM", network: "First Abu Dhabi Bank", address: "Burj Vista Tower 1, Sheikh Zayed Road",
-    distance: "1.2 km", distanceMeters: 1200, lat: 25.1935, lng: 55.2640, freeWithdrawal: false, fee: 5,
-    currency: "AED", hours: "24/7", features: ["Deposit"], rating: 4.1,
-  },
-  {
-    id: "atm5", name: "RAK Bank ATM", network: "RAK Bank", address: "City Walk, Phase 2, Al Wasl",
-    distance: "1.8 km", distanceMeters: 1800, lat: 25.2070, lng: 55.2607, freeWithdrawal: false, fee: 10,
-    currency: "AED", hours: "6 AM - 12 AM", features: [], rating: 3.9,
-  },
-  {
-    id: "atm6", name: "DIB ATM", network: "Dubai Islamic Bank", address: "Business Bay Metro Station",
-    distance: "2.1 km", distanceMeters: 2100, lat: 25.1860, lng: 55.2680, freeWithdrawal: true, fee: 0,
-    currency: "AED", hours: "24/7", features: ["Cardless", "Multi-currency"], rating: 4.4,
-  },
-  {
-    id: "atm7", name: "CBD Exchange ATM", network: "CBD", address: "Al Fahidi Metro Station, Bur Dubai",
-    distance: "3.5 km", distanceMeters: 3500, lat: 25.2545, lng: 55.2960, freeWithdrawal: true, fee: 0,
-    currency: "AED/USD", hours: "24/7", features: ["Multi-currency", "Deposit"], rating: 4.6,
-  },
-  {
-    id: "atm8", name: "HSBC ATM", network: "HSBC", address: "DIFC Gate Village, Building 3",
-    distance: "1.0 km", distanceMeters: 1000, lat: 25.2140, lng: 55.2800, freeWithdrawal: false, fee: 15,
-    currency: "AED/USD/EUR", hours: "24/7", features: ["Multi-currency"], rating: 4.2,
-  },
-]
+// Helper: compute distance text from a reference point
+function computeDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function formatDistance(meters: number): string {
+  return meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(1)} km`
+}
 
 type FilterType = "all" | "free" | "deposit" | "cardless"
 
 export default function ATMFinderPage() {
-  const [atms] = useState<ATM[]>(mockATMs)
+  const [atms, setAtms] = useState<ATM[]>([])
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState<FilterType>("all")
   const [selectedATM, setSelectedATM] = useState<string | null>(null)
+
+  const loadATMs = useCallback(async () => {
+    const { data, error } = await getATMs()
+    if (error) {
+      toast.error("Failed to load ATMs")
+      setLoading(false)
+      return
+    }
+
+    // Use center of Dubai as default reference for distance calculation
+    const refLat = 25.2048
+    const refLng = 55.2708
+
+    const mapped: ATM[] = data.map((a: ATMLocation) => {
+      const dist = computeDistance(refLat, refLng, a.lat, a.lng)
+      return {
+        id: a.id,
+        name: a.name,
+        network: a.network,
+        address: a.address,
+        lat: a.lat,
+        lng: a.lng,
+        freeWithdrawal: a.free_withdrawal,
+        fee: Number(a.fee),
+        currency: a.currency,
+        hours: a.hours,
+        features: a.features ?? [],
+        rating: Number(a.rating),
+        distanceMeters: Math.round(dist),
+        distance: formatDistance(dist),
+      }
+    }).sort((a, b) => a.distanceMeters - b.distanceMeters)
+
+    setAtms(mapped)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { loadATMs() }, [loadATMs])
 
   const filtered = atms
     .filter((atm) => {
@@ -129,6 +140,14 @@ export default function ATMFinderPage() {
     { key: "deposit", label: "Deposit" },
     { key: "cardless", label: "Cardless" },
   ]
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-8 pb-20 md:pb-0">

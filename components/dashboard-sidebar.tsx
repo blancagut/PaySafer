@@ -44,7 +44,6 @@ import {
   RotateCcw,
   Bitcoin,
   MapPin,
-  Heart,
 } from "lucide-react"
 import { Logo } from "@/components/logo"
 import { cn } from "@/lib/utils"
@@ -85,7 +84,6 @@ export const servicesNavigation = [
   { name: "Subscriptions", href: "/subscriptions", icon: RotateCcw },
   { name: "Crypto", href: "/crypto", icon: Bitcoin, badge: "NEW" as const },
   { name: "ATM Finder", href: "/atm-finder", icon: MapPin },
-  { name: "Donations", href: "/donations", icon: Heart },
 ]
 
 export const accountNavigation = [
