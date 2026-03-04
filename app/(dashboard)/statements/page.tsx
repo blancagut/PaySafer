@@ -23,6 +23,7 @@ import { getWalletHistory, getWallet, type WalletTransaction } from "@/lib/actio
 import { getProfile } from "@/lib/actions/profile"
 import { format, startOfMonth, endOfMonth, parseISO } from "date-fns"
 import { generateStatement } from "@/lib/pdf/statement-generator"
+import { generateStatementCSV } from "@/lib/csv/statement-csv"
 
 // ─── Types ───
 
@@ -200,6 +201,54 @@ export default function StatementsPage() {
     }
   }
 
+  const handleDownloadCSV = async (statement: Statement) => {
+    if (!profile || !wallet) {
+      toast.error("Profile or wallet data not loaded")
+      return
+    }
+
+    setDownloading(statement.id)
+    try {
+      const historyResult = await getWalletHistory({ limit: 1000 })
+      if (historyResult.error) {
+        toast.error(historyResult.error)
+        return
+      }
+
+      const allTxns = historyResult.data || []
+      const monthTxns = allTxns.filter((txn) => format(parseISO(txn.created_at), 'yyyy-MM') === statement.id)
+
+      const periodStart = startOfMonth(new Date(parseInt(statement.id.split('-')[0]), parseInt(statement.id.split('-')[1]) - 1, 1))
+      const periodEnd = endOfMonth(new Date(parseInt(statement.id.split('-')[0]), parseInt(statement.id.split('-')[1]) - 1, 1))
+
+      const statementData = {
+        accountHolder: profile.full_name || profile.email,
+        accountEmail: profile.email,
+        periodStart,
+        periodEnd,
+        transactions: monthTxns.map((txn) => ({
+          id: txn.id,
+          type: txn.direction,
+          amount: txn.amount,
+          currency: wallet.currency,
+          description: txn.description || `${txn.type} transaction`,
+          created_at: txn.created_at,
+        })),
+        openingBalance: statement.openingBalance,
+        closingBalance: statement.closingBalance,
+        currency: wallet.currency,
+      }
+
+      await generateStatementCSV(statementData)
+      toast.success(`${statement.month} ${statement.year} CSV downloaded`)
+    } catch (error) {
+      console.error('CSV generation error:', error)
+      toast.error('Failed to generate CSV')
+    } finally {
+      setDownloading(null)
+    }
+  }
+
   return (
     <div className="space-y-8 pb-20 md:pb-0">
       {/* Header */}
@@ -321,6 +370,16 @@ export default function StatementsPage() {
                       ) : (
                         <Download className="w-3.5 h-3.5" />
                       )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDownloadCSV(statement)}
+                      disabled={downloading === statement.id}
+                      className="text-xs text-muted-foreground hover:text-primary"
+                      title="Download CSV"
+                    >
+                      <ArrowDownToLine className="w-3.5 h-3.5" />
                     </Button>
                   </div>
                 </div>

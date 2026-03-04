@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { useEffect } from "react"
 
 // ─── Categories ───
 
@@ -79,13 +80,36 @@ const recentSpend = [
   { id: "t5", name: "DEWA", categoryId: "utilities", amount: 180.40, date: "Feb 28" },
 ]
 
+import { getBudgets, createBudget, updateBudget, deleteBudget } from '@/lib/actions/budgets'
+
 export default function BudgetsPage() {
-  const [budgets, setBudgets] = useState<Budget[]>(mockBudgets)
+  const [budgets, setBudgets] = useState<Budget[]>([])
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [editingBudget, setEditingBudget] = useState<string | null>(null)
   const [newBudget, setNewBudget] = useState({ categoryId: "", limit: "" })
   const [editLimit, setEditLimit] = useState("")
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    ;(async () => {
+      setLoading(true)
+      const res = await getBudgets()
+      if (res.error) {
+        toast.error(res.error)
+      } else if (res.data) {
+        // map server shape to client Budget
+        const mapped = res.data.map((b: any) => ({
+          id: b.id,
+          categoryId: b.category_id,
+          limit: Number(b.limit_amount),
+          spent: Number(b.spent ?? 0),
+          month: b.month,
+        }))
+        setBudgets(mapped)
+      }
+      setLoading(false)
+    })()
+  }, [])
 
   const totalLimit = budgets.reduce((s, b) => s + b.limit, 0)
   const totalSpent = budgets.reduce((s, b) => s + b.spent, 0)
@@ -101,37 +125,51 @@ export default function BudgetsPage() {
       return
     }
     setLoading(true)
-    await new Promise((r) => setTimeout(r, 600))
-    setBudgets([
-      ...budgets,
-      {
-        id: `b${Date.now()}`,
-        categoryId: newBudget.categoryId,
-        limit: parseFloat(newBudget.limit),
-        spent: 0,
-        month: "2026-03",
-      },
-    ])
-    toast.success("Budget created")
-    setShowCreateDialog(false)
-    setNewBudget({ categoryId: "", limit: "" })
+    const res = await createBudget({ category_id: newBudget.categoryId, limit_amount: Number(newBudget.limit) })
+    if (res.error) {
+      toast.error(res.error)
+    } else if (res.data) {
+      const b = res.data
+      const mapped = {
+        id: b.id,
+        categoryId: b.category_id,
+        limit: Number(b.limit_amount),
+        spent: Number(b.spent ?? 0),
+        month: b.month,
+      }
+      setBudgets((cur) => [mapped, ...cur])
+      toast.success("Budget created")
+      setShowCreateDialog(false)
+      setNewBudget({ categoryId: "", limit: "" })
+    }
     setLoading(false)
   }
 
   const handleEdit = async (budgetId: string) => {
     if (!editLimit) return
     setLoading(true)
-    await new Promise((r) => setTimeout(r, 500))
-    setBudgets(budgets.map((b) => b.id === budgetId ? { ...b, limit: parseFloat(editLimit) } : b))
-    toast.success("Budget limit updated")
-    setEditingBudget(null)
-    setEditLimit("")
+    const res = await updateBudget(budgetId, Number(editLimit))
+    if (res.error) {
+      toast.error(res.error)
+    } else if (res.data) {
+      setBudgets((cur) => cur.map((b) => (b.id === budgetId ? { ...b, limit: Number(res.data!.limit_amount) } : b)))
+      toast.success("Budget limit updated")
+      setEditingBudget(null)
+      setEditLimit("")
+    }
     setLoading(false)
   }
 
-  const handleDelete = (budgetId: string) => {
-    setBudgets(budgets.filter((b) => b.id !== budgetId))
-    toast.success("Budget removed")
+  const handleDelete = async (budgetId: string) => {
+    setLoading(true)
+    const res = await deleteBudget(budgetId)
+    if (res.error) {
+      toast.error(res.error)
+    } else {
+      setBudgets((cur) => cur.filter((b) => b.id !== budgetId))
+      toast.success("Budget removed")
+    }
+    setLoading(false)
   }
 
   return (

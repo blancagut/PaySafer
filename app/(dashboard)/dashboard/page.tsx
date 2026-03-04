@@ -26,6 +26,7 @@ import {
   ArrowRight,
   Sparkles,
   History,
+  Newspaper,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { GlassCard, GlassStat, GlassContainer } from "@/components/glass"
@@ -63,6 +64,94 @@ function timeAgo(dateStr: string) {
   return `${Math.floor(seconds / 86400)}d ago`
 }
 
+type FinanceNewsItem = {
+  id: string
+  title: string
+  summary: string
+  url: string
+  publisher: string
+  publishedAt: string | null
+}
+
+type FxRateCard = {
+  pair: string
+  rate: number
+}
+
+type StockDailyPoint = {
+  date: string
+  close: number
+}
+
+function asArray(value: unknown): any[] {
+  return Array.isArray(value) ? value : []
+}
+
+function extractNewsItems(payload: any): FinanceNewsItem[] {
+  const candidates = [
+    payload?.data?.stream,
+    payload?.data?.main?.stream,
+    payload?.data?.news,
+    payload?.data?.items,
+    payload?.data?.data?.main?.stream,
+    payload?.stream,
+    payload?.news,
+    payload?.items,
+  ]
+
+  const rawItems = candidates.flatMap((c) => asArray(c))
+
+  const mapped = rawItems.map((item: any, index: number) => {
+    const title =
+      item?.title ||
+      item?.content?.title ||
+      item?.content?.summary?.title ||
+      item?.content?.headline ||
+      ""
+
+    const url =
+      item?.url ||
+      item?.link ||
+      item?.content?.clickThroughUrl?.url ||
+      item?.content?.canonicalUrl?.url ||
+      ""
+
+    const summary =
+      item?.summary ||
+      item?.description ||
+      item?.content?.summary ||
+      item?.content?.description ||
+      ""
+
+    const publisher =
+      item?.publisher ||
+      item?.provider?.displayName ||
+      item?.content?.provider?.displayName ||
+      "Yahoo Finance"
+
+    const publishedAt =
+      item?.publishedAt ||
+      item?.pubDate ||
+      item?.content?.pubDate ||
+      null
+
+    const id = String(item?.id || url || `${title}-${index}`)
+
+    return {
+      id,
+      title: String(title).trim(),
+      summary: String(summary).trim(),
+      url: String(url).trim(),
+      publisher: String(publisher).trim(),
+      publishedAt: publishedAt ? String(publishedAt) : null,
+    }
+  })
+
+  return mapped
+    .filter((item) => item.title.length > 0 && item.url.length > 0)
+    .slice(0, 6)
+}
+
 // Custom chart tooltip
 function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
@@ -94,6 +183,16 @@ export default function DashboardPage() {
   const [trendStats, setTrendStats] = useState<{ activeEscrows: number; completed: number; disputes: number; totalVolume: number } | null>(null)
   const [totalVolume, setTotalVolume] = useState(0)
   const [chartRange, setChartRange] = useState<"7d" | "30d" | "90d">("30d")
+  const [financeNews, setFinanceNews] = useState<FinanceNewsItem[]>([])
+  const [fxRates, setFxRates] = useState<FxRateCard[]>([])
+  const [converterFrom, setConverterFrom] = useState("USD")
+  const [converterTo, setConverterTo] = useState("EUR")
+  const [converterAmount, setConverterAmount] = useState("100")
+  const [converterResult, setConverterResult] = useState<number | null>(null)
+  const [stockSymbol, setStockSymbol] = useState('MSFT')
+  const [stockPoints, setStockPoints] = useState<StockDailyPoint[]>([])
+  const [stockLatestClose, setStockLatestClose] = useState<number | null>(null)
+  const [stockChangePercent, setStockChangePercent] = useState<number | null>(null)
 
   // Only run on client to avoid SSR hydration mismatches
   useEffect(() => {
@@ -103,7 +202,7 @@ export default function DashboardPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [profileRes, statsRes, offerStatsRes, txnRes, offersRes, volumeRes, statusRes, trendsRes] = await Promise.all([
+      const [profileRes, statsRes, offerStatsRes, txnRes, offersRes, volumeRes, statusRes, trendsRes, newsRes, fxRatesRes, cryptoRes, stockRes] = await Promise.all([
         getProfile(),
         getTransactionStats(),
         getOfferStats(),
@@ -112,6 +211,18 @@ export default function DashboardPage() {
         getVolumeChartData(chartRange === "7d" ? 7 : chartRange === "90d" ? 90 : 30),
         getStatusDistribution(),
         getTrendStats(),
+        fetch("/api/finance/news?snippetCount=6&region=US", { cache: "no-store" })
+          .then((response) => (response.ok ? response.json() : null))
+          .catch(() => null),
+        fetch("/api/finance/fx/rates?base=USD&symbols=EUR,GBP,AED", { cache: "no-store" })
+          .then((response) => (response.ok ? response.json() : null))
+          .catch(() => null),
+        fetch('/api/crypto/prices', { cache: 'no-store' })
+          .then((response) => (response.ok ? response.json() : null))
+          .catch(() => null),
+        fetch(`/api/finance/stocks/daily?symbol=${encodeURIComponent(stockSymbol)}&outputSize=compact`, { cache: 'no-store' })
+          .then((response) => (response.ok ? response.json() : null))
+          .catch(() => null),
       ])
 
       if (profileRes.data) setProfile(profileRes.data)
@@ -125,14 +236,76 @@ export default function DashboardPage() {
         setTrendStats(trendsRes.data)
         setTotalVolume(trendsRes.data.totalVolume ?? 0)
       }
+      if (newsRes) {
+        setFinanceNews(extractNewsItems(newsRes))
+      }
+      if (fxRatesRes?.data?.rates) {
+        const rates: FxRateCard[] = Object.entries(fxRatesRes.data.rates).map(([symbol, rate]) => ({
+          pair: `USD→${symbol}`,
+          rate: Number(rate),
+        }))
+        setFxRates(rates)
+      }
+      if (cryptoRes?.prices) {
+        const btc = (cryptoRes.prices as any[]).find((item) => item.symbol === 'BTC')
+        if (btc?.price) {
+          setFxRates((current) => {
+            const withoutBtc = current.filter((item) => item.pair !== 'BTC→USD')
+            return [...withoutBtc, { pair: 'BTC→USD', rate: Number(btc.price) }]
+          })
+        }
+      }
+      if (stockRes?.data) {
+        const latestClose = Number(stockRes.data.latestClose)
+        const changePercent = Number(stockRes.data.changePercent)
+        const points = Array.isArray(stockRes.data.points)
+          ? stockRes.data.points.slice(0, 7).map((point: any) => ({
+              date: String(point.date),
+              close: Number(point.close),
+            }))
+          : []
+
+        setStockLatestClose(Number.isFinite(latestClose) ? latestClose : null)
+        setStockChangePercent(Number.isFinite(changePercent) ? changePercent : null)
+        setStockPoints(points)
+      }
     } catch {
       toast.error("Failed to load dashboard data")
     } finally {
       setLoading(false)
     }
-  }, [chartRange])
+  }, [chartRange, stockSymbol])
 
   useEffect(() => { loadData() }, [loadData])
+
+  const runConverter = useCallback(async () => {
+    const amount = Number.parseFloat(converterAmount)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('Enter a valid amount')
+      return
+    }
+
+    try {
+      const response = await fetch(
+        `/api/finance/fx/convert?from=${encodeURIComponent(converterFrom)}&to=${encodeURIComponent(converterTo)}&amount=${encodeURIComponent(String(amount))}`,
+        { cache: 'no-store' }
+      )
+      const json = await response.json()
+
+      if (!response.ok || !json?.data?.convertedAmount) {
+        throw new Error(json?.details || 'Failed to convert currency')
+      }
+
+      setConverterResult(Number(json.data.convertedAmount))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to convert currency'
+      toast.error(message)
+    }
+  }, [converterAmount, converterFrom, converterTo])
+
+  useEffect(() => {
+    runConverter()
+  }, [runConverter])
 
   const copyOfferLink = (token: string) => {
     const url = `${window.location.origin}/offer/${token}`
@@ -419,6 +592,147 @@ export default function DashboardPage() {
         })}
       </div>
 
+      {/* ─── FX Rates + Converter ─── */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <GlassContainer
+          header={{
+            title: 'FX Rates',
+            description: 'Live conversion snapshots',
+          }}
+          className="xl:col-span-2"
+        >
+          {fxRates.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-6 text-center">No FX rates available right now</div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {fxRates.map((rate) => (
+                <div key={rate.pair} className="p-3 rounded-lg bg-white/[0.02] hover:bg-white/[0.04] transition-colors">
+                  <p className="text-xs text-muted-foreground">{rate.pair}</p>
+                  <p className="text-sm font-semibold text-foreground mt-1">{rate.rate.toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </GlassContainer>
+
+        <GlassContainer
+          header={{
+            title: 'FX Converter',
+            description: 'Convert currencies instantly',
+          }}
+        >
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              <input
+                type="text"
+                value={converterFrom}
+                onChange={(e) => setConverterFrom(e.target.value.toUpperCase())}
+                className="h-9 rounded-lg bg-white/[0.04] border border-white/[0.10] px-2 text-xs text-foreground focus:outline-none focus:border-primary/50"
+                placeholder="FROM"
+              />
+              <input
+                type="text"
+                value={converterTo}
+                onChange={(e) => setConverterTo(e.target.value.toUpperCase())}
+                className="h-9 rounded-lg bg-white/[0.04] border border-white/[0.10] px-2 text-xs text-foreground focus:outline-none focus:border-primary/50"
+                placeholder="TO"
+              />
+              <input
+                type="number"
+                value={converterAmount}
+                onChange={(e) => setConverterAmount(e.target.value)}
+                className="h-9 rounded-lg bg-white/[0.04] border border-white/[0.10] px-2 text-xs text-foreground focus:outline-none focus:border-primary/50"
+                placeholder="Amount"
+              />
+            </div>
+            <Button size="sm" onClick={runConverter} className="w-full">
+              Convert
+            </Button>
+            <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+              <p className="text-xs text-muted-foreground">Result</p>
+              <p className="text-sm font-semibold text-foreground mt-1">
+                {converterResult === null
+                  ? '—'
+                  : `${converterAmount} ${converterFrom} = ${converterResult.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${converterTo}`}
+              </p>
+            </div>
+          </div>
+        </GlassContainer>
+      </div>
+
+      {/* ─── Stocks Snapshot ─── */}
+      <GlassContainer
+        header={{
+          title: 'Stocks Snapshot',
+          description: 'Daily market data (Alpha Vantage)',
+        }}
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {['MSFT', 'AAPL', 'TSLA', 'NVDA'].map((symbol) => (
+              <button
+                key={symbol}
+                onClick={() => setStockSymbol(symbol)}
+                className={`px-3 py-1 text-xs rounded-lg border transition-colors ${
+                  stockSymbol === symbol
+                    ? 'bg-primary/20 text-primary border-primary/30'
+                    : 'bg-white/[0.03] text-muted-foreground border-white/[0.10] hover:text-foreground'
+                }`}
+              >
+                {symbol}
+              </button>
+            ))}
+            <input
+              type="text"
+              value={stockSymbol}
+              onChange={(event) => setStockSymbol(event.target.value.toUpperCase())}
+              className="h-8 w-24 rounded-lg bg-white/[0.04] border border-white/[0.10] px-2 text-xs text-foreground focus:outline-none focus:border-primary/50"
+              placeholder="SYMBOL"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+              <p className="text-xs text-muted-foreground">Symbol</p>
+              <p className="text-sm font-semibold text-foreground mt-1">{stockSymbol}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+              <p className="text-xs text-muted-foreground">Last Close</p>
+              <p className="text-sm font-semibold text-foreground mt-1">
+                {stockLatestClose === null ? '—' : `$${stockLatestClose.toFixed(2)}`}
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+              <p className="text-xs text-muted-foreground">Daily Change</p>
+              <p className={`text-sm font-semibold mt-1 ${
+                stockChangePercent === null
+                  ? 'text-foreground'
+                  : stockChangePercent >= 0
+                    ? 'text-emerald-400'
+                    : 'text-red-400'
+              }`}>
+                {stockChangePercent === null
+                  ? '—'
+                  : `${stockChangePercent >= 0 ? '+' : ''}${stockChangePercent.toFixed(2)}%`}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            {stockPoints.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-2">No daily price history available right now.</p>
+            ) : (
+              stockPoints.map((point) => (
+                <div key={point.date} className="flex items-center justify-between p-2.5 rounded-lg bg-white/[0.02]">
+                  <span className="text-xs text-muted-foreground">{formatDate(point.date)}</span>
+                  <span className="text-sm font-medium text-foreground">${point.close.toFixed(2)}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </GlassContainer>
+
       {/* ─── Offers + Transactions Grid ─── */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {/* Recent Offers */}
@@ -564,6 +878,56 @@ export default function DashboardPage() {
           )}
         </GlassContainer>
       </div>
+
+      {/* ─── Market News ─── */}
+      <GlassContainer
+        header={{
+          title: "Market News",
+          description: "Latest financial headlines (US)",
+        }}
+      >
+        {financeNews.length === 0 ? (
+          <div className="text-center py-8">
+            <div className="w-12 h-12 rounded-full bg-white/[0.04] flex items-center justify-center mx-auto mb-3">
+              <Newspaper className="w-5 h-5 text-muted-foreground" />
+            </div>
+            <p className="text-sm text-muted-foreground">No news available right now</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Try refreshing to fetch the latest market headlines.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {financeNews.map((item) => (
+              <a
+                key={item.id}
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block p-3 rounded-lg hover:bg-white/[0.04] transition-colors group"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors line-clamp-2">
+                      {item.title}
+                    </p>
+                    {item.summary && (
+                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                        {item.summary}
+                      </p>
+                    )}
+                    <p className="text-[11px] text-muted-foreground mt-1.5">
+                      {item.publisher}
+                      {item.publishedAt ? ` · ${timeAgo(item.publishedAt)}` : ""}
+                    </p>
+                  </div>
+                  <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0 mt-0.5" />
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+      </GlassContainer>
 
       {/* ─── Trust / Info Card ─── */}
       <GlassCard variant="gradient" padding="none" className="animate-fade-in-up">

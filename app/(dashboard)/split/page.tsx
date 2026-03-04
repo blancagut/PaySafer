@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Scissors,
   Plus,
@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/select"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { getSplitBills, createSplitBill, markParticipantPaid, deleteSplitBill } from '@/lib/actions/split'
 
 // ─── Split Categories ───
 
@@ -143,7 +144,7 @@ const statusConfig: Record<string, { label: string; badge: "emerald" | "amber" |
 type Filter = "all" | "active" | "settled"
 
 export default function SplitPage() {
-  const [splits, setSplits] = useState<SplitGroup[]>(mockSplits)
+  const [splits, setSplits] = useState<SplitGroup[]>([])
   const [filter, setFilter] = useState<Filter>("all")
   const [showCreate, setShowCreate] = useState(false)
   const [showDetail, setShowDetail] = useState<string | null>(null)
@@ -173,38 +174,66 @@ export default function SplitPage() {
     return s.status === "settled"
   })
 
+  useEffect(() => {
+    ;(async () => {
+      setLoading(true)
+      const res = await getSplitBills()
+      if (res.error) {
+        toast.error(res.error)
+      } else if (res.data) {
+        const mapped = res.data.map((b) => ({
+          id: b.id,
+          title: b.title,
+          categoryId: b.category_id,
+          totalAmount: Number(b.total_amount),
+          date: new Date(b.created_at).toLocaleDateString(),
+          status: b.status,
+          createdBy: b.is_creator ? 'You' : 'Other',
+          participants: (b.participants ?? []).map((p) => ({ id: p.id, name: p.participant_name, amount: Number(p.amount), paid: !!p.is_paid })),
+        }))
+        setSplits(mapped)
+      }
+      setLoading(false)
+    })()
+  }, [])
+
   const handleCreate = async () => {
     if (!newTitle || !newCategory || !newTotal || !newParticipants) {
       toast.error("Fill in all fields")
       return
     }
     setLoading(true)
-    await new Promise((r) => setTimeout(r, 1000))
     const names = newParticipants.split(",").map((n) => n.trim()).filter(Boolean)
     const total = parseFloat(newTotal)
     const perPerson = total / (names.length + 1)
-    const newSplit: SplitGroup = {
-      id: `sp${Date.now()}`,
-      title: newTitle,
-      categoryId: newCategory,
-      totalAmount: total,
-      date: "Mar 3, 2026",
-      status: "active",
-      createdBy: "You",
-      participants: [
-        { id: "you", name: "You", amount: perPerson, paid: true },
-        ...names.map((name, i) => ({ id: `np${i}`, name, amount: perPerson, paid: false })),
-      ],
+    const participants = [
+      { participant_name: 'You', amount: perPerson },
+      ...names.map((name) => ({ participant_name: name, amount: perPerson })),
+    ]
+
+    const res = await createSplitBill({ title: newTitle, category_id: newCategory, total_amount: total, participants })
+    if (res.error) {
+      toast.error(res.error)
+    } else if (res.data) {
+      const b = res.data
+      const mapped: SplitGroup = {
+        id: b.id,
+        title: b.title,
+        categoryId: b.category_id,
+        totalAmount: Number(b.total_amount),
+        date: new Date(b.created_at).toLocaleDateString(),
+        status: b.status,
+        createdBy: b.is_creator ? 'You' : 'Other',
+        participants: (b.participants ?? []).map((p) => ({ id: p.id, name: p.participant_name, amount: Number(p.amount), paid: !!p.is_paid })),
+      }
+      setSplits((cur) => [mapped, ...cur])
+      toast.success(`Split created! ${names.length} people owe you`, { description: `$${perPerson.toFixed(2)} each` })
+      setShowCreate(false)
+      setNewTitle("")
+      setNewCategory("")
+      setNewTotal("")
+      setNewParticipants("")
     }
-    setSplits([newSplit, ...splits])
-    toast.success(`Split created! ${names.length} people owe you`, {
-      description: `$${perPerson.toFixed(2)} each`,
-    })
-    setShowCreate(false)
-    setNewTitle("")
-    setNewCategory("")
-    setNewTotal("")
-    setNewParticipants("")
     setLoading(false)
   }
 
@@ -218,12 +247,34 @@ export default function SplitPage() {
 
   const handleSettle = async (splitId: string) => {
     setLoading(true)
-    await new Promise((r) => setTimeout(r, 800))
-    setSplits(splits.map((s) =>
-      s.id === splitId
-        ? { ...s, status: "settled" as const, participants: s.participants.map((p) => ({ ...p, paid: true })) }
-        : s
-    ))
+    const split = splits.find((s) => s.id === splitId)
+    if (!split) {
+      setLoading(false)
+      return
+    }
+    // Mark each unpaid participant as paid via server
+    for (const p of split.participants) {
+      if (!p.paid) {
+        await markParticipantPaid(p.id, true)
+      }
+    }
+    // Refresh list
+    const res = await getSplitBills()
+    if (res.error) {
+      toast.error(res.error)
+    } else if (res.data) {
+      const mapped = res.data.map((b) => ({
+        id: b.id,
+        title: b.title,
+        categoryId: b.category_id,
+        totalAmount: Number(b.total_amount),
+        date: new Date(b.created_at).toLocaleDateString(),
+        status: b.status,
+        createdBy: b.is_creator ? 'You' : 'Other',
+        participants: (b.participants ?? []).map((p) => ({ id: p.id, name: p.participant_name, amount: Number(p.amount), paid: !!p.is_paid })),
+      }))
+      setSplits(mapped)
+    }
     toast.success("Split settled!")
     setShowDetail(null)
     setLoading(false)
