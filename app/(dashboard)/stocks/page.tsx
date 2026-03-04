@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import {
   Search,
   Loader2,
@@ -10,6 +10,12 @@ import {
   TrendingDown,
   Info,
   LineChart,
+  Sparkles,
+  Cpu,
+  Car,
+  Pill,
+  Banknote,
+  ShoppingCart,
 } from "lucide-react"
 import { GlassCard } from "@/components/glass"
 import { GlassBadge } from "@/components/glass"
@@ -27,7 +33,64 @@ import {
   type StockDailyPoint,
   type WatchlistItem,
 } from "@/lib/actions/stocks"
-import { useEffect } from "react"
+
+// ─── Popular stock categories ───
+const POPULAR_STOCKS = [
+  {
+    category: "Tech Giants",
+    icon: Cpu,
+    color: "text-blue-400",
+    stocks: [
+      { symbol: "AAPL", name: "Apple Inc." },
+      { symbol: "MSFT", name: "Microsoft Corp." },
+      { symbol: "GOOGL", name: "Alphabet Inc." },
+      { symbol: "AMZN", name: "Amazon.com Inc." },
+      { symbol: "META", name: "Meta Platforms" },
+      { symbol: "NVDA", name: "NVIDIA Corp." },
+    ],
+  },
+  {
+    category: "Finance",
+    icon: Banknote,
+    color: "text-emerald-400",
+    stocks: [
+      { symbol: "JPM", name: "JPMorgan Chase" },
+      { symbol: "V", name: "Visa Inc." },
+      { symbol: "MA", name: "Mastercard" },
+      { symbol: "GS", name: "Goldman Sachs" },
+    ],
+  },
+  {
+    category: "EV & Auto",
+    icon: Car,
+    color: "text-red-400",
+    stocks: [
+      { symbol: "TSLA", name: "Tesla Inc." },
+      { symbol: "RIVN", name: "Rivian Automotive" },
+      { symbol: "F", name: "Ford Motor Co." },
+    ],
+  },
+  {
+    category: "Healthcare",
+    icon: Pill,
+    color: "text-purple-400",
+    stocks: [
+      { symbol: "JNJ", name: "Johnson & Johnson" },
+      { symbol: "UNH", name: "UnitedHealth Group" },
+      { symbol: "PFE", name: "Pfizer Inc." },
+    ],
+  },
+  {
+    category: "Consumer",
+    icon: ShoppingCart,
+    color: "text-amber-400",
+    stocks: [
+      { symbol: "WMT", name: "Walmart Inc." },
+      { symbol: "KO", name: "Coca-Cola Co." },
+      { symbol: "DIS", name: "Walt Disney Co." },
+    ],
+  },
+]
 
 export default function StocksPage() {
   const [query, setQuery] = useState("")
@@ -139,6 +202,34 @@ export default function StocksPage() {
         Each search uses 1 API call (25/day limit). Viewing a stock chart uses 1 additional call.
       </p>
 
+      {/* Watchlist — shown at top when it has items */}
+      {watchlist.length > 0 && (
+        <div className="animate-fade-in" style={{ animationDelay: "100ms" }}>
+          <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
+            <Star className="w-3.5 h-3.5 text-yellow-400" /> Your Watchlist
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {watchlist.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => handleSelectStock(item.symbol)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] transition-colors text-sm"
+              >
+                <span className="font-medium text-foreground">{item.symbol}</span>
+                {item.name && <span className="text-xs text-muted-foreground/60 hidden sm:inline">{item.name}</span>}
+                <span
+                  role="button"
+                  onClick={(e) => { e.stopPropagation(); handleToggleWatchlist(item.symbol) }}
+                  className="ml-1 p-0.5 rounded hover:bg-white/[0.1]"
+                >
+                  <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Search Results */}
       {results.length > 0 && (
         <div className="animate-fade-in-up space-y-2" style={{ animationDelay: "120ms" }}>
@@ -249,30 +340,63 @@ export default function StocksPage() {
         </div>
       )}
 
-      {/* Watchlist */}
-      {watchlist.length > 0 && (
-        <div className="animate-fade-in" style={{ animationDelay: "200ms" }}>
-          <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
-            <Star className="w-3.5 h-3.5 text-yellow-400" /> Your Watchlist
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {watchlist.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => handleSelectStock(item.symbol)}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] transition-colors text-sm"
-              >
-                <span className="font-medium text-foreground">{item.symbol}</span>
-                {item.name && <span className="text-xs text-muted-foreground/60 hidden sm:inline">{item.name}</span>}
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleToggleWatchlist(item.symbol) }}
-                  className="ml-1 p-0.5 rounded hover:bg-white/[0.1]"
-                >
-                  <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
-                </button>
-              </button>
-            ))}
+      {/* Popular Stocks — always visible as a discovery section */}
+      {!selectedSymbol && results.length === 0 && (
+        <div className="animate-fade-in-up space-y-5" style={{ animationDelay: "120ms" }}>
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-primary" />
+            <h3 className="text-sm font-semibold text-foreground">Popular Stocks</h3>
+            <span className="text-[10px] text-muted-foreground/50">Tap to search &amp; view daily data</span>
           </div>
+
+          {POPULAR_STOCKS.map((cat) => {
+            const Icon = cat.icon
+            return (
+              <div key={cat.category}>
+                <div className="flex items-center gap-2 mb-2">
+                  <Icon className={cn("w-3.5 h-3.5", cat.color)} />
+                  <span className="text-xs font-medium text-muted-foreground">{cat.category}</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {cat.stocks.map((s) => (
+                    <GlassCard
+                      key={s.symbol}
+                      padding="sm"
+                      className="hover:bg-white/[0.06] transition-all cursor-pointer group"
+                      onClick={() => handleSelectStock(s.symbol)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0">
+                          <span className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                            {s.symbol}
+                          </span>
+                          <p className="text-[10px] text-muted-foreground/60 truncate">{s.name}</p>
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleToggleWatchlist(s.symbol, s.name) }}
+                          className="p-1.5 rounded-lg hover:bg-white/[0.05] transition-colors shrink-0"
+                        >
+                          {isInWatchlist(s.symbol)
+                            ? <Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />
+                            : <StarOff className="w-3.5 h-3.5 text-muted-foreground/30" />}
+                        </button>
+                      </div>
+                    </GlassCard>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Empty watchlist hint */}
+      {watchlist.length === 0 && !selectedSymbol && results.length === 0 && (
+        <div className="animate-fade-in text-center py-4" style={{ animationDelay: "200ms" }}>
+          <Star className="w-5 h-5 text-muted-foreground/20 mx-auto mb-2" />
+          <p className="text-xs text-muted-foreground/40">
+            Star stocks to build your personal watchlist
+          </p>
         </div>
       )}
 
