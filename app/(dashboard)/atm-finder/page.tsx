@@ -14,7 +14,6 @@ import {
   Banknote,
   Building2,
   Info,
-  ExternalLink,
   Locate,
 } from "lucide-react"
 import { GlassCard } from "@/components/glass"
@@ -22,6 +21,17 @@ import { GlassBadge } from "@/components/glass"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import dynamic from "next/dynamic"
+
+// Dynamically import map to avoid SSR issues
+const ATMMap = dynamic(() => import("@/components/atm-map"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-full w-full flex items-center justify-center bg-white/[0.03] rounded-xl">
+      <p className="text-sm text-muted-foreground">Loading map...</p>
+    </div>
+  ),
+})
 
 // ─── ATM Data ───
 
@@ -109,9 +119,8 @@ export default function ATMFinderPage() {
   const freeCount = atms.filter((a) => a.freeWithdrawal).length
 
   const handleDirections = (atm: ATM) => {
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${atm.lat},${atm.lng}`
-    window.open(url, "_blank")
-    toast.success("Opening directions", { description: atm.name })
+    setSelectedATM(atm.id)
+    toast.success("Centered on ATM", { description: atm.name })
   }
 
   const filters: { key: FilterType; label: string }[] = [
@@ -157,51 +166,16 @@ export default function ATMFinderPage() {
         <GlassCard padding="md">
           <span className="text-xs text-muted-foreground tracking-wide uppercase block mb-1">Location</span>
           <span className="text-sm font-medium text-foreground flex items-center gap-1">
-            <Locate className="w-3.5 h-3.5 text-primary" /> Downtown Dubai
+            <Locate className="w-3.5 h-3.5 text-primary" /> Global map
           </span>
         </GlassCard>
       </div>
 
-      {/* Map Placeholder */}
+      {/* Interactive Map */}
       <div className="animate-fade-in" style={{ animationDelay: "130ms" }}>
         <GlassCard padding="none" className="overflow-hidden">
-          <div className="h-48 sm:h-64 bg-gradient-to-br from-white/[0.03] to-white/[0.01] border border-white/[0.06] rounded-xl flex flex-col items-center justify-center relative">
-            <div className="absolute inset-0 opacity-10">
-              {/* Grid pattern to simulate map */}
-              <div className="w-full h-full" style={{
-                backgroundImage: "linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",
-                backgroundSize: "40px 40px"
-              }} />
-            </div>
-            {/* ATM dots */}
-            {filtered.slice(0, 6).map((atm, i) => (
-              <div
-                key={atm.id}
-                className={cn(
-                  "absolute w-3 h-3 rounded-full ring-2 ring-offset-1 ring-offset-transparent cursor-pointer transition-transform hover:scale-150",
-                  atm.freeWithdrawal ? "bg-emerald-400 ring-emerald-400/30" : "bg-amber-400 ring-amber-400/30"
-                )}
-                style={{
-                  top: `${20 + (i * 12) % 60}%`,
-                  left: `${15 + (i * 17) % 70}%`,
-                }}
-                onClick={() => setSelectedATM(atm.id)}
-                title={atm.name}
-              />
-            ))}
-            <div className="relative z-10 text-center">
-              <MapPin className="w-8 h-8 text-primary mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">Interactive map</p>
-              <p className="text-[10px] text-muted-foreground/50">Connect Google Maps API for live map</p>
-            </div>
-            <div className="absolute bottom-3 right-3 z-10 flex gap-2 text-[10px]">
-              <span className="flex items-center gap-1 text-emerald-400">
-                <span className="w-2 h-2 rounded-full bg-emerald-400" /> Free
-              </span>
-              <span className="flex items-center gap-1 text-amber-400">
-                <span className="w-2 h-2 rounded-full bg-amber-400" /> Fee
-              </span>
-            </div>
+          <div className="h-48 sm:h-64 md:h-80">
+            <ATMMap atms={filtered} selectedId={selectedATM} onSelectATM={setSelectedATM} />
           </div>
         </GlassCard>
       </div>

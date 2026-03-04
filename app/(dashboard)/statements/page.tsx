@@ -1,20 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   FileText,
   Download,
   Calendar,
-  ChevronDown,
-  Search,
   Loader2,
-  Filter,
-  Eye,
-  Mail,
   ArrowDownToLine,
 } from "lucide-react"
-import { GlassCard, GlassContainer } from "@/components/glass"
-import { GlassBadge } from "@/components/glass"
+import { GlassCard } from "@/components/glass"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -25,105 +19,203 @@ import {
 } from "@/components/ui/select"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { getWalletHistory, getWallet, type WalletTransaction } from "@/lib/actions/wallet"
+import { getProfile } from "@/lib/actions/profile"
+import { format, startOfMonth, endOfMonth, parseISO } from "date-fns"
+import { generateStatement } from "@/lib/pdf/statement-generator"
 
-// ─── Mock Data ───
+// ─── Types ───
 
 interface Statement {
   id: string
   month: string
   year: number
   period: string
-  type: "monthly" | "annual" | "tax"
-  size: string
+  type: "monthly"
   transactions: number
   totalIn: number
   totalOut: number
-  status: "ready" | "generating"
-}
-
-const mockStatements: Statement[] = [
-  { id: "s1", month: "February", year: 2026, period: "Feb 1 – Feb 28, 2026", type: "monthly", size: "142 KB", transactions: 23, totalIn: 4250.00, totalOut: 2180.50, status: "ready" },
-  { id: "s2", month: "January", year: 2026, period: "Jan 1 – Jan 31, 2026", type: "monthly", size: "198 KB", transactions: 31, totalIn: 6100.00, totalOut: 3420.75, status: "ready" },
-  { id: "s3", month: "December", year: 2025, period: "Dec 1 – Dec 31, 2025", type: "monthly", size: "156 KB", transactions: 18, totalIn: 3800.00, totalOut: 2950.25, status: "ready" },
-  { id: "s4", month: "November", year: 2025, period: "Nov 1 – Nov 30, 2025", type: "monthly", size: "134 KB", transactions: 15, totalIn: 2900.00, totalOut: 1650.00, status: "ready" },
-  { id: "s5", month: "October", year: 2025, period: "Oct 1 – Oct 31, 2025", type: "monthly", size: "112 KB", transactions: 12, totalIn: 2100.00, totalOut: 1800.40, status: "ready" },
-  { id: "s6", month: "Annual 2025", year: 2025, period: "Jan 1 – Dec 31, 2025", type: "annual", size: "1.2 MB", transactions: 187, totalIn: 45200.00, totalOut: 32100.90, status: "ready" },
-  { id: "s7", month: "Tax Summary 2025", year: 2025, period: "Jan 1 – Dec 31, 2025", type: "tax", size: "98 KB", transactions: 187, totalIn: 45200.00, totalOut: 32100.90, status: "ready" },
-]
-
-const typeConfig: Record<string, { label: string; badge: "emerald" | "blue" | "purple" }> = {
-  monthly: { label: "Monthly", badge: "emerald" },
-  annual: { label: "Annual", badge: "blue" },
-  tax: { label: "Tax", badge: "purple" },
+  openingBalance: number
+  closingBalance: number
 }
 
 export default function StatementsPage() {
-  const [statements] = useState<Statement[]>(mockStatements)
+  const [statements, setStatements] = useState<Statement[]>([])
+  const [loading, setLoading] = useState(true)
   const [yearFilter, setYearFilter] = useState<string>("all")
-  const [typeFilter, setTypeFilter] = useState<string>("all")
   const [downloading, setDownloading] = useState<string | null>(null)
+  const [profile, setProfile] = useState<any>(null)
+  const [wallet, setWallet] = useState<any>(null)
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const loadData = async () => {
+    setLoading(true)
+    
+    // Load profile
+    const profileResult = await getProfile()
+    if (profileResult.data) {
+      setProfile(profileResult.data)
+    }
+
+    // Load wallet
+    const walletResult = await getWallet()
+    if (walletResult.data) {
+      setWallet(walletResult.data)
+    }
+
+    // Load all transactions
+    const historyResult = await getWalletHistory({ limit: 1000 })
+    if (historyResult.error) {
+      toast.error(historyResult.error)
+      setLoading(false)
+      return
+    }
+
+    const transactions = historyResult.data || []
+    
+    // Group transactions by month
+    const monthlyData = new Map<string, WalletTransaction[]>()
+    transactions.forEach((txn) => {
+      const date = parseISO(txn.created_at)
+      const key = format(date, "yyyy-MM")
+      if (!monthlyData.has(key)) {
+        monthlyData.set(key, [])
+      }
+      monthlyData.get(key)!.push(txn)
+    })
+
+    // Generate statements for each month
+    const generatedStatements: Statement[] = []
+    let runningBalance = walletResult.data?.balance || 0
+
+    // Sort months in descending order
+    const sortedMonths = Array.from(monthlyData.keys()).sort().reverse()
+
+    for (const monthKey of sortedMonths) {
+      const [yearStr, monthStr] = monthKey.split("-")
+      const year = parseInt(yearStr)
+      const month = parseInt(monthStr)
+      const monthTxns = monthlyData.get(monthKey) || []
+
+      // Calculate totals
+      const totalIn = monthTxns
+        .filter((t) => t.direction === "credit")
+        .reduce((sum, t) => sum + t.amount, 0)
+
+      const totalOut = monthTxns
+        .filter((t) => t.direction === "debit")
+        .reduce((sum, t) => sum + t.amount, 0)
+
+      // Calculate opening balance (this is approximate since we're working backwards)
+      const netChange = totalIn - totalOut
+      const closingBalance = monthTxns[0]?.balance_after || runningBalance
+      const openingBalance = closingBalance - netChange
+
+      const monthDate = new Date(year, month - 1, 1)
+      const periodStart = startOfMonth(monthDate)
+      const periodEnd = endOfMonth(monthDate)
+
+      generatedStatements.push({
+        id: monthKey,
+        month: format(monthDate, "MMMM"),
+        year,
+        period: `${format(periodStart, "MMM d")} – ${format(periodEnd, "MMM d, yyyy")}`,
+        type: "monthly",
+        transactions: monthTxns.length,
+        totalIn,
+        totalOut,
+        openingBalance,
+        closingBalance,
+      })
+
+      runningBalance = openingBalance
+    }
+
+    setStatements(generatedStatements)
+    setLoading(false)
+  }
 
   const years = [...new Set(statements.map((s) => s.year))].sort((a, b) => b - a)
 
   const filtered = statements.filter((s) => {
     if (yearFilter !== "all" && s.year !== Number(yearFilter)) return false
-    if (typeFilter !== "all" && s.type !== typeFilter) return false
     return true
   })
 
   const handleDownload = async (statement: Statement) => {
+    if (!profile || !wallet) {
+      toast.error("Profile or wallet data not loaded")
+      return
+    }
+
     setDownloading(statement.id)
-    await new Promise((r) => setTimeout(r, 1500))
-    toast.success(`${statement.month} ${statement.year} statement downloaded`, {
-      description: `PDF · ${statement.size}`,
-    })
-    setDownloading(null)
-  }
 
-  const handleEmailStatement = async (statement: Statement) => {
-    toast.success("Statement sent to your email", {
-      description: "Check your inbox in a few minutes.",
-    })
-  }
+    try {
+      // Fetch transactions for this month
+      const historyResult = await getWalletHistory({ limit: 1000 })
+      if (historyResult.error) {
+        toast.error(historyResult.error)
+        return
+      }
 
-  const handleDownloadAll = async () => {
-    setDownloading("all")
-    await new Promise((r) => setTimeout(r, 2000))
-    toast.success("All statements downloaded as ZIP")
-    setDownloading(null)
+      const allTxns = historyResult.data || []
+      const [year, month] = statement.id.split("-")
+      const monthTxns = allTxns.filter((txn) => {
+        const txnDate = format(parseISO(txn.created_at), "yyyy-MM")
+        return txnDate === statement.id
+      })
+
+      // Prepare statement data
+      const periodStart = startOfMonth(new Date(parseInt(year), parseInt(month) - 1, 1))
+      const periodEnd = endOfMonth(new Date(parseInt(year), parseInt(month) - 1, 1))
+
+      const statementData = {
+        accountHolder: profile.full_name || profile.email,
+        accountEmail: profile.email,
+        periodStart,
+        periodEnd,
+        transactions: monthTxns.map((txn) => ({
+          id: txn.id,
+          type: txn.direction,
+          amount: txn.amount,
+          currency: wallet.currency,
+          description: txn.description || `${txn.type} transaction`,
+          created_at: txn.created_at,
+        })),
+        openingBalance: statement.openingBalance,
+        closingBalance: statement.closingBalance,
+        currency: wallet.currency,
+      }
+
+      await generateStatement(statementData)
+      toast.success(`${statement.month} ${statement.year} statement downloaded`)
+    } catch (error) {
+      console.error("PDF generation error:", error)
+      toast.error("Failed to generate PDF")
+    } finally {
+      setDownloading(null)
+    }
   }
 
   return (
     <div className="space-y-8 pb-20 md:pb-0">
       {/* Header */}
       <div className="animate-fade-in">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <FileText className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-                Statements
-              </h2>
-              <p className="text-sm text-muted-foreground font-light tracking-wide">
-                Download monthly and annual account statements
-              </p>
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+            <FileText className="w-5 h-5 text-primary" />
           </div>
-          <Button
-            variant="outline"
-            onClick={handleDownloadAll}
-            disabled={downloading === "all"}
-            className="text-sm font-medium"
-          >
-            {downloading === "all" ? (
-              <Loader2 className="w-4 h-4 animate-spin mr-2" />
-            ) : (
-              <ArrowDownToLine className="w-4 h-4 mr-2" />
-            )}
-            Download All
-          </Button>
+          <div>
+            <h2 className="text-2xl font-semibold tracking-tight text-foreground">
+              Statements
+            </h2>
+            <p className="text-sm text-muted-foreground font-light tracking-wide">
+              Download PDF account statements
+            </p>
+          </div>
         </div>
       </div>
 
@@ -155,19 +247,6 @@ export default function StatementsPage() {
           </SelectContent>
         </Select>
 
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-[140px] h-9 bg-white/[0.04] border-white/[0.10] text-sm">
-            <Filter className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
-            <SelectValue placeholder="Type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            <SelectItem value="monthly">Monthly</SelectItem>
-            <SelectItem value="annual">Annual</SelectItem>
-            <SelectItem value="tax">Tax Summary</SelectItem>
-          </SelectContent>
-        </Select>
-
         <span className="text-xs text-muted-foreground ml-auto">
           {filtered.length} statement{filtered.length !== 1 ? "s" : ""}
         </span>
@@ -175,10 +254,20 @@ export default function StatementsPage() {
 
       {/* Statements List */}
       <div className="animate-fade-in-up" style={{ animationDelay: "200ms" }}>
-        <div className="space-y-2">
-          {filtered.map((statement) => {
-            const tc = typeConfig[statement.type]
-            return (
+        {loading ? (
+          <GlassCard padding="lg" className="text-center">
+            <Loader2 className="w-8 h-8 text-muted-foreground/30 mx-auto mb-4 animate-spin" />
+            <p className="text-sm text-muted-foreground">Loading statements...</p>
+          </GlassCard>
+        ) : filtered.length === 0 ? (
+          <GlassCard padding="lg" className="text-center">
+            <FileText className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-foreground mb-1">No statements available</h3>
+            <p className="text-sm text-muted-foreground">Statements will appear here once you have transaction activity</p>
+          </GlassCard>
+        ) : (
+          <div className="space-y-2">
+            {filtered.map((statement) => (
               <GlassCard key={statement.id} padding="none" className="hover:bg-white/[0.06] transition-colors">
                 <div className="flex items-center gap-4 p-4">
                   {/* Icon */}
@@ -190,12 +279,14 @@ export default function StatementsPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-foreground">
-                        {statement.month} {statement.type === "monthly" ? statement.year : ""}
+                        {statement.month} {statement.year}
                       </span>
-                      <GlassBadge variant={tc.badge} size="sm">{tc.label}</GlassBadge>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400">
+                        Monthly
+                      </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {statement.period} · {statement.transactions} transactions · {statement.size}
+                      {statement.period} · {statement.transactions} transactions
                     </p>
                   </div>
 
@@ -204,28 +295,19 @@ export default function StatementsPage() {
                     <div>
                       <span className="text-[10px] text-muted-foreground tracking-wide uppercase block">In</span>
                       <span className="text-sm text-emerald-400 font-mono">
-                        +${statement.totalIn.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                        +{wallet?.currency || "$"}{statement.totalIn.toLocaleString("en-US", { minimumFractionDigits: 2 })}
                       </span>
                     </div>
                     <div>
                       <span className="text-[10px] text-muted-foreground tracking-wide uppercase block">Out</span>
                       <span className="text-sm text-red-400 font-mono">
-                        -${statement.totalOut.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                        -{wallet?.currency || "$"}{statement.totalOut.toLocaleString("en-US", { minimumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
 
                   {/* Actions */}
                   <div className="flex items-center gap-1 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleEmailStatement(statement)}
-                      className="text-xs text-muted-foreground hover:text-foreground"
-                      title="Email statement"
-                    >
-                      <Mail className="w-3.5 h-3.5" />
-                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -243,9 +325,9 @@ export default function StatementsPage() {
                   </div>
                 </div>
               </GlassCard>
-            )
-          })}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Regulatory note */}
