@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Lock, Users, CheckCircle, ArrowRight, Zap, Globe, ShieldCheck, ChevronLeft, ChevronRight } from "lucide-react"
 import Link from "next/link"
-import Image from "next/image"
 import { Logo } from "@/components/logo"
 
 const landingSlides = [
@@ -47,14 +46,12 @@ export default function LandingPage() {
       {/* Section — Static Hero Banner */}
       <section className="relative w-full bg-[#0A0F1A]">
         <div className="relative w-full min-h-[220px] md:min-h-[360px] lg:min-h-[520px]">
-          <Image
-            src="/firstmainstatic.jpg"
+          <img
+            src="/firstmainstatic.jpg?v=20260304"
             alt="PaySafer — Pay globally, stay in control"
-            fill
-            className="object-contain object-center"
-            sizes="100vw"
-            priority
-            unoptimized
+            className="absolute inset-0 w-full h-full object-contain object-center"
+            loading="eager"
+            fetchPriority="high"
           />
         </div>
       </section>
@@ -68,14 +65,11 @@ export default function LandingPage() {
               className="absolute inset-0 transition-opacity duration-700 ease-in-out bg-[#0A0F1A]"
               style={{ opacity: i === landingCurrent ? 1 : 0 }}
             >
-              <Image
-                src={slide.src}
+              <img
+                src={`${slide.src}?v=20260304`}
                 alt={slide.alt}
-                fill
-                className="object-contain object-center"
-                sizes="100vw"
-                priority={i === 0}
-                unoptimized
+                className="absolute inset-0 w-full h-full object-contain object-center"
+                loading={i === 0 ? "eager" : "lazy"}
               />
             </div>
           ))}
