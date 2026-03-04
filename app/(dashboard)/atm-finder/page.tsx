@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import dynamic from "next/dynamic"
-import { getATMs, type ATMLocation } from "@/lib/actions/atms"
+import { getATMs, getATMSuggestions, type ATMLocation, type ATMSuggestion } from "@/lib/actions/atms"
 
 // Dynamically import map to avoid SSR issues
 const ATMMap = dynamic(() => import("@/components/atm-map"), {
@@ -72,16 +72,25 @@ type FilterType = "all" | "free" | "deposit" | "cardless"
 export default function ATMFinderPage() {
   const [atms, setAtms] = useState<ATM[]>([])
   const [loading, setLoading] = useState(true)
+  const [searchLoading, setSearchLoading] = useState(false)
   const [search, setSearch] = useState("")
+  const [suggestions, setSuggestions] = useState<ATMSuggestion[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [suggestionLoading, setSuggestionLoading] = useState(false)
   const [filter, setFilter] = useState<FilterType>("all")
   const [selectedATM, setSelectedATM] = useState<string | null>(null)
+  const [sourceHint, setSourceHint] = useState<string>("Live map data")
 
-  const loadATMs = useCallback(async () => {
-    const { data, error } = await getATMs()
+  const loadATMs = useCallback(async (query?: string, preferredId?: string) => {
+    const activeQuery = query?.trim() || ""
+    if (!loading) setSearchLoading(true)
+
+    const { data, error } = await getATMs({ query: activeQuery })
     if (error) {
-      toast.error("Failed to load ATMs")
-      setLoading(false)
-      return
+      toast.error(error)
+      setSourceHint("Fallback directory data")
+    } else {
+      setSourceHint(activeQuery ? "Live search results" : "Live map data")
     }
 
     // Use center of Dubai as default reference for distance calculation
@@ -109,21 +118,54 @@ export default function ATMFinderPage() {
     }).sort((a, b) => a.distanceMeters - b.distanceMeters)
 
     setAtms(mapped)
+    if (preferredId) {
+      const preferred = mapped.find((atm) => atm.id === preferredId)
+      if (preferred) setSelectedATM(preferred.id)
+    }
     setLoading(false)
-  }, [])
+    setSearchLoading(false)
+  }, [loading])
 
   useEffect(() => { loadATMs() }, [loadATMs])
 
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      void loadATMs(search)
+    }, 450)
+
+    return () => clearTimeout(timeout)
+  }, [search, loadATMs])
+
+  useEffect(() => {
+    const query = search.trim()
+    if (query.length < 2) {
+      setSuggestions([])
+      setSuggestionLoading(false)
+      return
+    }
+
+    setSuggestionLoading(true)
+    const timeout = setTimeout(async () => {
+      const { data } = await getATMSuggestions({ query })
+      setSuggestions(data)
+      setSuggestionLoading(false)
+    }, 250)
+
+    return () => clearTimeout(timeout)
+  }, [search])
+
+  const handleSuggestionSelect = async (item: ATMSuggestion) => {
+    setSearch(item.text)
+    setShowSuggestions(false)
+    await loadATMs(item.text, item.placeId)
+  }
+
   const filtered = atms
     .filter((atm) => {
-      const matchesSearch = atm.name.toLowerCase().includes(search.toLowerCase()) ||
-        atm.address.toLowerCase().includes(search.toLowerCase()) ||
-        atm.network.toLowerCase().includes(search.toLowerCase())
-
-      if (filter === "free") return matchesSearch && atm.freeWithdrawal
-      if (filter === "deposit") return matchesSearch && atm.features.includes("Deposit")
-      if (filter === "cardless") return matchesSearch && atm.features.includes("Cardless")
-      return matchesSearch
+      if (filter === "free") return atm.freeWithdrawal
+      if (filter === "deposit") return atm.features.includes("Deposit")
+      if (filter === "cardless") return atm.features.includes("Cardless")
+      return true
     })
     .sort((a, b) => a.distanceMeters - b.distanceMeters)
 
@@ -185,7 +227,7 @@ export default function ATMFinderPage() {
         <GlassCard padding="md">
           <span className="text-xs text-muted-foreground tracking-wide uppercase block mb-1">Location</span>
           <span className="text-sm font-medium text-foreground flex items-center gap-1">
-            <Locate className="w-3.5 h-3.5 text-primary" /> Global map
+            <Locate className="w-3.5 h-3.5 text-primary" /> {sourceHint}
           </span>
         </GlassCard>
       </div>
@@ -205,11 +247,34 @@ export default function ATMFinderPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search by bank, location..."
+            placeholder="Search by bank, location, district..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onFocus={() => setShowSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 140)}
             className="w-full bg-white/[0.04] border border-white/[0.10] rounded-xl pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
+          {(searchLoading || suggestionLoading) && (
+            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground animate-spin" />
+          )}
+
+          {showSuggestions && suggestions.length > 0 && (
+            <div className="absolute z-30 mt-1 w-full rounded-xl border border-white/[0.08] bg-black/70 backdrop-blur-xl shadow-2xl overflow-hidden">
+              {suggestions.map((item) => (
+                <button
+                  key={item.placeId}
+                  type="button"
+                  onMouseDown={() => void handleSuggestionSelect(item)}
+                  className="w-full text-left px-3 py-2.5 hover:bg-white/[0.06] transition-colors"
+                >
+                  <p className="text-sm text-foreground line-clamp-1">{item.text}</p>
+                  {item.secondaryText && (
+                    <p className="text-xs text-muted-foreground/70 line-clamp-1">{item.secondaryText}</p>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex gap-1 p-0.5 bg-white/[0.03] border border-white/[0.06] rounded-xl w-fit">
           {filters.map((f) => (
@@ -229,6 +294,12 @@ export default function ATMFinderPage() {
 
       {/* ATM List */}
       <div className="animate-fade-in-up space-y-2" style={{ animationDelay: "200ms" }}>
+        {filtered.length === 0 && (
+          <GlassCard padding="md">
+            <p className="text-sm text-muted-foreground">No ATMs found for this search. Try a broader query.</p>
+          </GlassCard>
+        )}
+
         {filtered.map((atm) => (
           <GlassCard
             key={atm.id}
