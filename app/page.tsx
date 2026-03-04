@@ -120,7 +120,7 @@ export default function LandingPage() {
             src="/firstmainstatic.jpg"
             alt="PaySafer — Pay globally, stay in control"
             fill
-            className="object-cover"
+            className="object-contain object-center"
             sizes="100vw"
             priority
             unoptimized
@@ -141,7 +141,7 @@ export default function LandingPage() {
                 src={slide.src}
                 alt={slide.alt}
                 fill
-                className="object-cover"
+                className="object-contain object-center"
                 sizes="100vw"
                 priority={i === 0}
                 unoptimized
