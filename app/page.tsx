@@ -8,22 +8,38 @@ import Link from "next/link"
 import Image from "next/image"
 import { Logo } from "@/components/logo"
 
+/* TODO: Restore credit card slider — kept for future re-activation */
 const slides = [
   { src: "/slides/slide-1.jpg", alt: "PaySafer — Secure escrow transactions" },
   { src: "/slides/slide-2.jpg", alt: "PaySafer — Track your payments" },
   { src: "/slides/slide-3.jpg", alt: "PaySafer — Full transaction dashboard" },
 ]
 
-export default function LandingPage() {
-  const [current, setCurrent] = useState(0)
+const landingSlides = [
+  { src: "/landing1.jpg", alt: "PaySafer — Your trusted payment partner" },
+  { src: "/landing2.jpg", alt: "PaySafer — Secure global transactions" },
+  { src: "/landing3.jpg", alt: "PaySafer — Fast and reliable transfers" },
+  { src: "/landing4.jpg", alt: "PaySafer — Built for buyers and sellers" },
+]
 
+export default function LandingPage() {
+  /* Old slider state — kept for future restoration */
+  const [current, setCurrent] = useState(0)
   const next = useCallback(() => setCurrent((c) => (c + 1) % slides.length), [])
   const prev = useCallback(() => setCurrent((c) => (c - 1 + slides.length) % slides.length), [])
-
   useEffect(() => {
     const timer = setInterval(next, 5000)
     return () => clearInterval(timer)
   }, [next])
+
+  /* New landing slider state */
+  const [landingCurrent, setLandingCurrent] = useState(0)
+  const landingNext = useCallback(() => setLandingCurrent((c) => (c + 1) % landingSlides.length), [])
+  const landingPrev = useCallback(() => setLandingCurrent((c) => (c - 1 + landingSlides.length) % landingSlides.length), [])
+  useEffect(() => {
+    const timer = setInterval(landingNext, 5000)
+    return () => clearInterval(timer)
+  }, [landingNext])
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/20">
@@ -44,7 +60,11 @@ export default function LandingPage() {
         </div>
       </header>
 
-      {/* Section 1 — Image Slider */}
+      {/* ============================================================
+          HIDDEN: Original credit card slider — restore by removing
+          the {false && (...)} wrapper below.
+          ============================================================ */}
+      {false && (
       <section className="relative w-full overflow-hidden bg-[#0A0F1A]">
         <div className="relative w-full aspect-[16/9] md:aspect-[21/9]">
           {slides.map((slide, i) => (
@@ -63,8 +83,6 @@ export default function LandingPage() {
               />
             </div>
           ))}
-
-          {/* Arrows */}
           <button
             onClick={prev}
             className="absolute left-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur flex items-center justify-center text-white transition-colors"
@@ -79,8 +97,6 @@ export default function LandingPage() {
           >
             <ChevronRight className="w-5 h-5" />
           </button>
-
-          {/* Dots */}
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex gap-2">
             {slides.map((_, i) => (
               <button
@@ -95,8 +111,75 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+      )}
 
-      {/* Section 2 — Hero */}
+      {/* Section — Static Hero Banner */}
+      <section className="relative w-full bg-[#0A0F1A]">
+        <div className="relative w-full aspect-[16/9] md:aspect-[21/9]">
+          <Image
+            src="/firstmainstatic.jpg"
+            alt="PaySafer — Pay globally, stay in control"
+            fill
+            className="object-cover"
+            sizes="100vw"
+            priority
+          />
+        </div>
+      </section>
+
+      {/* Section — Landing Slider */}
+      <section className="relative w-full overflow-hidden bg-[#0A0F1A] border-t border-white/5">
+        <div className="relative w-full aspect-[16/9] md:aspect-[21/9]">
+          {landingSlides.map((slide, i) => (
+            <div
+              key={i}
+              className="absolute inset-0 transition-opacity duration-700 ease-in-out bg-[#0A0F1A]"
+              style={{ opacity: i === landingCurrent ? 1 : 0 }}
+            >
+              <Image
+                src={slide.src}
+                alt={slide.alt}
+                fill
+                className="object-cover"
+                sizes="100vw"
+                priority={i === 0}
+              />
+            </div>
+          ))}
+
+          {/* Arrows */}
+          <button
+            onClick={landingPrev}
+            className="absolute left-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur flex items-center justify-center text-white transition-colors"
+            aria-label="Previous banner"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <button
+            onClick={landingNext}
+            className="absolute right-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur flex items-center justify-center text-white transition-colors"
+            aria-label="Next banner"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+
+          {/* Dots */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex gap-2">
+            {landingSlides.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setLandingCurrent(i)}
+                className={`w-2.5 h-2.5 rounded-full transition-colors ${
+                  i === landingCurrent ? "bg-emerald-400" : "bg-white/30 hover:bg-white/50"
+                }`}
+                aria-label={`Go to banner ${i + 1}`}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Section — Hero */}
       <section className="container mx-auto px-4 py-20 lg:py-32">
         <div className="max-w-4xl mx-auto text-center space-y-8">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-sm font-medium">
