@@ -54,6 +54,57 @@ interface ATM {
   rating: number
 }
 
+const FALLBACK_ATMS: ATM[] = [
+  {
+    id: "fallback-enbd-dubai-mall",
+    name: "ENBD ATM",
+    network: "Emirates NBD",
+    address: "Dubai Mall, Downtown Dubai",
+    distance: "0.9 km",
+    distanceMeters: 900,
+    lat: 25.1972,
+    lng: 55.2744,
+    freeWithdrawal: true,
+    fee: 0,
+    currency: "AED",
+    hours: "24/7",
+    features: ["Cardless", "Deposit", "Multi-currency"],
+    rating: 4.8,
+  },
+  {
+    id: "fallback-adcb-souk",
+    name: "ADCB ATM",
+    network: "ADCB",
+    address: "Souk Al Bahar, Downtown Dubai",
+    distance: "1.1 km",
+    distanceMeters: 1100,
+    lat: 25.196,
+    lng: 55.2755,
+    freeWithdrawal: true,
+    fee: 0,
+    currency: "AED",
+    hours: "24/7",
+    features: ["Cardless", "Deposit"],
+    rating: 4.5,
+  },
+  {
+    id: "fallback-fab-szr",
+    name: "FAB ATM",
+    network: "First Abu Dhabi Bank",
+    address: "Sheikh Zayed Road, Dubai",
+    distance: "2.0 km",
+    distanceMeters: 2000,
+    lat: 25.1935,
+    lng: 55.264,
+    freeWithdrawal: false,
+    fee: 5,
+    currency: "AED",
+    hours: "24/7",
+    features: ["Deposit"],
+    rating: 4.1,
+  },
+]
+
 // Helper: compute distance text from a reference point
 function computeDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000
@@ -80,50 +131,66 @@ export default function ATMFinderPage() {
   const [filter, setFilter] = useState<FilterType>("all")
   const [selectedATM, setSelectedATM] = useState<string | null>(null)
   const [sourceHint, setSourceHint] = useState<string>("Live map data")
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const loadATMs = useCallback(async (query?: string, preferredId?: string) => {
     const activeQuery = query?.trim() || ""
     if (!loading) setSearchLoading(true)
 
-    const { data, error } = await getATMs({ query: activeQuery })
-    if (error) {
-      toast.error(error)
-      setSourceHint("Fallback directory data")
-    } else {
-      setSourceHint(activeQuery ? "Live search results" : "Live map data")
-    }
+    try {
+      const { data, error } = await getATMs({ query: activeQuery })
 
-    // Use center of Dubai as default reference for distance calculation
-    const refLat = 25.2048
-    const refLng = 55.2708
-
-    const mapped: ATM[] = data.map((a: ATMLocation) => {
-      const dist = computeDistance(refLat, refLng, a.lat, a.lng)
-      return {
-        id: a.id,
-        name: a.name,
-        network: a.network,
-        address: a.address,
-        lat: a.lat,
-        lng: a.lng,
-        freeWithdrawal: a.free_withdrawal,
-        fee: Number(a.fee),
-        currency: a.currency,
-        hours: a.hours,
-        features: a.features ?? [],
-        rating: Number(a.rating),
-        distanceMeters: Math.round(dist),
-        distance: formatDistance(dist),
+      if (error) {
+        setLoadError(error)
+        setSourceHint("Fallback directory data")
+        toast.error(error)
+      } else {
+        setLoadError(null)
+        setSourceHint(activeQuery ? "Live search results" : "Live map data")
       }
-    }).sort((a, b) => a.distanceMeters - b.distanceMeters)
 
-    setAtms(mapped)
-    if (preferredId) {
-      const preferred = mapped.find((atm) => atm.id === preferredId)
-      if (preferred) setSelectedATM(preferred.id)
+      const refLat = 25.2048
+      const refLng = 55.2708
+
+      const mapped: ATM[] = data.map((a: ATMLocation) => {
+        const dist = computeDistance(refLat, refLng, a.lat, a.lng)
+        return {
+          id: a.id,
+          name: a.name,
+          network: a.network,
+          address: a.address,
+          lat: a.lat,
+          lng: a.lng,
+          freeWithdrawal: a.free_withdrawal,
+          fee: Number(a.fee),
+          currency: a.currency,
+          hours: a.hours,
+          features: a.features ?? [],
+          rating: Number(a.rating),
+          distanceMeters: Math.round(dist),
+          distance: formatDistance(dist),
+        }
+      }).sort((a, b) => a.distanceMeters - b.distanceMeters)
+
+      const safeData = mapped.length > 0 ? mapped : FALLBACK_ATMS
+      if (mapped.length === 0 && !activeQuery) {
+        setSourceHint("Local fallback directory")
+      }
+
+      setAtms(safeData)
+      if (preferredId) {
+        const preferred = safeData.find((atm) => atm.id === preferredId)
+        if (preferred) setSelectedATM(preferred.id)
+      }
+    } catch {
+      setLoadError("Failed to load ATM data")
+      setSourceHint("Local fallback directory")
+      setAtms(FALLBACK_ATMS)
+      toast.error("Failed to load ATM data")
+    } finally {
+      setLoading(false)
+      setSearchLoading(false)
     }
-    setLoading(false)
-    setSearchLoading(false)
   }, [loading])
 
   useEffect(() => { loadATMs() }, [loadATMs])
@@ -146,8 +213,12 @@ export default function ATMFinderPage() {
 
     setSuggestionLoading(true)
     const timeout = setTimeout(async () => {
-      const { data } = await getATMSuggestions({ query })
-      setSuggestions(data)
+      try {
+        const { data } = await getATMSuggestions({ query })
+        setSuggestions(data)
+      } catch {
+        setSuggestions([])
+      }
       setSuggestionLoading(false)
     }, 250)
 
@@ -231,6 +302,14 @@ export default function ATMFinderPage() {
           </span>
         </GlassCard>
       </div>
+
+      {loadError && (
+        <GlassCard padding="md" className="border border-amber-500/20 bg-amber-500/5">
+          <p className="text-xs text-amber-300">
+            Live provider is temporarily unavailable. Showing fallback ATM directory.
+          </p>
+        </GlassCard>
+      )}
 
       {/* Interactive Map */}
       <div className="animate-fade-in" style={{ animationDelay: "130ms" }}>
