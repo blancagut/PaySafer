@@ -356,9 +356,7 @@ export default function CryptoPage() {
                 onClick={() => { setShowTrade(asset.symbol); setTradeType("buy"); setConfirmStep(false) }}
               >
                 <div className="flex items-center gap-4 p-4">
-                  <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden", asset.color)}>
-                    <img src={asset.logo} alt={asset.symbol} className="w-7 h-7 object-contain" />
-                  </div>
+                  <img src={asset.logo} alt={asset.symbol} className="w-10 h-10 shrink-0 object-contain" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-foreground">{asset.name}</span>
@@ -398,9 +396,7 @@ export default function CryptoPage() {
               {assets.filter((a) => a.symbol === "USDT" || a.symbol === "USDC").map((asset) => (
                 <GlassCard key={asset.symbol} padding="none" className="mb-2">
                   <div className="flex items-center gap-4 p-4">
-                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden", asset.color)}>
-                      <img src={asset.logo} alt={asset.symbol} className="w-7 h-7 object-contain" />
-                    </div>
+                    <img src={asset.logo} alt={asset.symbol} className="w-10 h-10 shrink-0 object-contain" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-foreground">{asset.name}</span>
@@ -450,9 +446,7 @@ export default function CryptoPage() {
                   return (
                     <GlassCard key={asset.symbol} padding="md" className="hover:bg-white/[0.06] transition-colors">
                       <div className="flex items-center gap-4">
-                        <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden", asset.color)}>
-                          <img src={asset.logo} alt={asset.symbol} className="w-7 h-7 object-contain" />
-                        </div>
+                        <img src={asset.logo} alt={asset.symbol} className="w-10 h-10 shrink-0 object-contain" />
                         <div className="flex-1 min-w-0">
                           <span className="text-sm font-medium text-foreground">{asset.name}</span>
                           <p className="text-xs text-muted-foreground">
@@ -569,9 +563,7 @@ export default function CryptoPage() {
               <>
                 <DialogHeader>
                   <div className="flex items-center gap-3">
-                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center overflow-hidden", asset.color)}>
-                      <img src={asset.logo} alt={asset.symbol} className="w-7 h-7 object-contain" />
-                    </div>
+                    <img src={asset.logo} alt={asset.symbol} className="w-10 h-10 shrink-0 object-contain" />
                     <div>
                       <DialogTitle className="text-foreground">{tradeType === "buy" ? "Buy" : "Sell"} {asset.name}</DialogTitle>
                       <DialogDescription>
