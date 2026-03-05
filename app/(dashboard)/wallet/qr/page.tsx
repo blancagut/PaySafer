@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
+import { QRCodeSVG } from "qrcode.react"
+import jsQR from "jsqr"
 import {
   QrCode,
   Download,
@@ -23,137 +25,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { haptic } from "@/lib/haptics"
-
-// ─── Simple QR Code Generator (SVG-based, no deps) ───
-
-function generateQRMatrix(data: string): boolean[][] {
-  // Simplified QR-like visual pattern generator
-  // For production, use a proper QR library. This creates a visual representation.
-  const size = 25
-  const matrix: boolean[][] = Array.from({ length: size }, () =>
-    Array.from({ length: size }, () => false)
-  )
-
-  // Position detection patterns (3 corners)
-  const drawFinder = (row: number, col: number) => {
-    for (let r = 0; r < 7; r++) {
-      for (let c = 0; c < 7; c++) {
-        const isOuter = r === 0 || r === 6 || c === 0 || c === 6
-        const isInner = r >= 2 && r <= 4 && c >= 2 && c <= 4
-        if (isOuter || isInner) matrix[row + r][col + c] = true
-      }
-    }
-  }
-
-  drawFinder(0, 0)
-  drawFinder(0, size - 7)
-  drawFinder(size - 7, 0)
-
-  // Timing patterns
-  for (let i = 8; i < size - 8; i++) {
-    matrix[6][i] = i % 2 === 0
-    matrix[i][6] = i % 2 === 0
-  }
-
-  // Data encoding (hash-based pseudo-random for visual effect)
-  let hash = 0
-  for (let i = 0; i < data.length; i++) {
-    hash = ((hash << 5) - hash + data.charCodeAt(i)) >>> 0
-  }
-
-  for (let r = 9; r < size - 8; r++) {
-    for (let c = 9; c < size - 8; c++) {
-      hash = (hash * 1103515245 + 12345) >>> 0
-      matrix[r][c] = (hash >> 16) % 3 !== 0
-    }
-  }
-
-  // Additional data in remaining areas
-  for (let r = 9; r < size - 8; r++) {
-    for (let c = 0; c < 6; c++) {
-      hash = (hash * 1103515245 + 12345) >>> 0
-      matrix[r][c] = (hash >> 16) % 3 !== 0
-    }
-  }
-  for (let r = 0; r < 6; r++) {
-    for (let c = 9; c < size - 8; c++) {
-      hash = (hash * 1103515245 + 12345) >>> 0
-      matrix[r][c] = (hash >> 16) % 3 !== 0
-    }
-  }
-
-  return matrix
-}
-
-function QRCodeSVG({
-  data,
-  size = 256,
-  fgColor = "#10b981",
-  bgColor = "transparent",
-  logo = true,
-}: {
-  data: string
-  size?: number
-  fgColor?: string
-  bgColor?: string
-  logo?: boolean
-}) {
-  const matrix = generateQRMatrix(data)
-  const moduleCount = matrix.length
-  const cellSize = size / moduleCount
-
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
-      xmlns="http://www.w3.org/2000/svg"
-      className="rounded-xl"
-    >
-      <rect width={size} height={size} fill={bgColor} rx={12} />
-      {matrix.map((row, r) =>
-        row.map((cell, c) =>
-          cell ? (
-            <rect
-              key={`${r}-${c}`}
-              x={c * cellSize}
-              y={r * cellSize}
-              width={cellSize + 0.5}
-              height={cellSize + 0.5}
-              fill={fgColor}
-              rx={cellSize * 0.2}
-            />
-          ) : null
-        )
-      )}
-      {logo && (
-        <g>
-          <rect
-            x={size / 2 - 20}
-            y={size / 2 - 20}
-            width={40}
-            height={40}
-            rx={8}
-            fill="#0a0f1a"
-            stroke={fgColor}
-            strokeWidth={2}
-          />
-          <text
-            x={size / 2}
-            y={size / 2 + 6}
-            textAnchor="middle"
-            fill={fgColor}
-            fontSize={18}
-            fontWeight="bold"
-            fontFamily="sans-serif"
-          >
-            P
-          </text>
-        </g>
-      )}
-    </svg>
-  )
-}
 
 // ─── Main QR Page ───
 
@@ -261,9 +132,17 @@ export default function QRPaymentPage() {
               <div className="absolute -inset-4 bg-primary/10 rounded-2xl blur-xl" />
               <div id="qr-code-svg" className="relative bg-background/80 backdrop-blur-xl p-4 rounded-2xl border border-white/[0.08]">
                 <QRCodeSVG
-                  data={qrUrl || "https://paysafer.me"}
+                  value={qrUrl || "https://paysafer.me"}
                   size={220}
                   fgColor="#10b981"
+                  bgColor="transparent"
+                  level="M"
+                  imageSettings={{
+                    src: "",
+                    height: 0,
+                    width: 0,
+                    excavate: false,
+                  }}
                 />
               </div>
             </div>
@@ -381,59 +260,77 @@ export default function QRPaymentPage() {
 function ScannerPanel() {
   const router = useRouter()
   const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const scanningRef = useRef(false)
   const [scanning, setScanning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const stopStream = useCallback(() => {
+    scanningRef.current = false
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop())
+      streamRef.current = null
+    }
+  }, [])
 
   const startScanner = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
       })
+      streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         videoRef.current.play()
         setScanning(true)
+        scanningRef.current = true
         setError(null)
 
-        // Use BarcodeDetector API if available
-        if ("BarcodeDetector" in window) {
-          const detector = new (window as any).BarcodeDetector({ formats: ["qr_code"] })
-          const scanFrame = async () => {
-            if (!videoRef.current || !scanning) return
-            try {
-              const barcodes = await detector.detect(videoRef.current)
-              if (barcodes.length > 0) {
-                const url = barcodes[0].rawValue
-                if (url.includes("paysafer.me/pay/") || url.includes("/pay/")) {
-                  haptic("success")
-                  stream.getTracks().forEach((t: MediaStreamTrack) => t.stop())
-                  // Navigate to the payment URL
-                  const path = new URL(url).pathname
-                  router.push(path)
-                  return
-                }
-              }
-            } catch {
-              // continue scanning
-            }
+        // Use jsQR for universal browser support (works in Safari, Firefox, Chrome, etc.)
+        const canvas = canvasRef.current!
+        const ctx = canvas.getContext("2d", { willReadFrequently: true })!
+
+        const scanFrame = () => {
+          if (!scanningRef.current || !videoRef.current) return
+          const video = videoRef.current
+          if (video.readyState !== video.HAVE_ENOUGH_DATA) {
             requestAnimationFrame(scanFrame)
+            return
+          }
+          canvas.width = video.videoWidth
+          canvas.height = video.videoHeight
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+          const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: "dontInvert",
+          })
+          if (code?.data) {
+            const url = code.data
+            if (url.includes("paysafer.me/pay/") || url.includes("/pay/")) {
+              haptic("success")
+              stopStream()
+              try {
+                const path = new URL(url.startsWith("http") ? url : `https://${url}`).pathname
+                router.push(path)
+              } catch {
+                toast.error("Invalid QR code URL")
+              }
+              return
+            }
           }
           requestAnimationFrame(scanFrame)
         }
+        requestAnimationFrame(scanFrame)
       }
     } catch {
       setError("Camera access denied. Please allow camera permissions to scan QR codes.")
     }
-  }, [router, scanning])
+  }, [router, stopStream])
 
   useEffect(() => {
-    return () => {
-      if (videoRef.current?.srcObject) {
-        const tracks = (videoRef.current.srcObject as MediaStream).getTracks()
-        tracks.forEach((t) => t.stop())
-      }
-    }
-  }, [])
+    return () => stopStream()
+  }, [stopStream])
 
   return (
     <GlassCard className="p-6 space-y-6">
@@ -458,6 +355,7 @@ function ScannerPanel() {
           playsInline
           muted
         />
+        <canvas ref={canvasRef} className="hidden" />
 
         {/* Scan overlay */}
         {scanning && (
