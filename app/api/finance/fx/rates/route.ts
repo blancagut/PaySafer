@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(
       {
-        source: 'currency-exchange-fx (RapidAPI)',
+        source: 'rate-api.com',
         endpoint: 'rates',
         data,
       },

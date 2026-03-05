@@ -39,16 +39,16 @@ import { SUPPORTED_TRADING_PAIRS } from "@/lib/binance/types"
 
 // ─── Asset config (colors/icons for display) ───
 
-const ASSET_META: Record<string, { color: string; icon: string; name: string }> = {
-  BTC:  { color: "bg-orange-500", icon: "₿", name: "Bitcoin" },
-  ETH:  { color: "bg-indigo-500", icon: "Ξ", name: "Ethereum" },
-  SOL:  { color: "bg-purple-500", icon: "◎", name: "Solana" },
-  BNB:  { color: "bg-yellow-500", icon: "B", name: "BNB" },
-  XRP:  { color: "bg-blue-500",   icon: "X", name: "XRP" },
-  ADA:  { color: "bg-blue-600",   icon: "₳", name: "Cardano" },
-  AVAX: { color: "bg-red-500",    icon: "A", name: "Avalanche" },
-  USDT: { color: "bg-green-500",  icon: "₮", name: "Tether" },
-  USDC: { color: "bg-blue-400",   icon: "$", name: "USD Coin" },
+const ASSET_META: Record<string, { color: string; logo: string; name: string }> = {
+  BTC:  { color: "bg-orange-500", logo: "https://assets.coingecko.com/coins/images/1/small/bitcoin.png", name: "Bitcoin" },
+  ETH:  { color: "bg-indigo-500", logo: "https://assets.coingecko.com/coins/images/279/small/ethereum.png", name: "Ethereum" },
+  SOL:  { color: "bg-purple-500", logo: "https://assets.coingecko.com/coins/images/4128/small/solana.png", name: "Solana" },
+  BNB:  { color: "bg-yellow-500", logo: "https://assets.coingecko.com/coins/images/825/small/bnb-icon2_2x.png", name: "BNB" },
+  XRP:  { color: "bg-blue-500",   logo: "https://assets.coingecko.com/coins/images/44/small/xrp-symbol-white-128.png", name: "XRP" },
+  ADA:  { color: "bg-blue-600",   logo: "https://assets.coingecko.com/coins/images/975/small/cardano.png", name: "Cardano" },
+  AVAX: { color: "bg-red-500",    logo: "https://assets.coingecko.com/coins/images/12559/small/Avalanche_Circle_RedWhite_Trans.png", name: "Avalanche" },
+  USDT: { color: "bg-green-500",  logo: "https://assets.coingecko.com/coins/images/325/small/Tether.png", name: "Tether" },
+  USDC: { color: "bg-blue-400",   logo: "https://assets.coingecko.com/coins/images/6319/small/usdc.png", name: "USD Coin" },
 }
 
 interface DisplayAsset {
@@ -59,7 +59,7 @@ interface DisplayAsset {
   holdings: number
   avgBuyPrice: number
   color: string
-  icon: string
+  logo: string
 }
 
 type Tab = "market" | "portfolio" | "history"
@@ -109,7 +109,7 @@ export default function CryptoPage() {
         const all: DisplayAsset[] = []
 
         for (const p of prices) {
-          const meta = ASSET_META[p.symbol] || { color: "bg-gray-500", icon: "?", name: p.symbol }
+          const meta = ASSET_META[p.symbol] || { color: "bg-gray-500", logo: "", name: p.symbol }
           const h = holdingsMap.get(p.symbol)
           all.push({
             symbol: p.symbol,
@@ -119,7 +119,7 @@ export default function CryptoPage() {
             holdings: h?.holdings ?? 0,
             avgBuyPrice: h?.avgBuyPrice ?? 0,
             color: meta.color,
-            icon: meta.icon,
+            logo: meta.logo,
           })
         }
 
@@ -356,8 +356,8 @@ export default function CryptoPage() {
                 onClick={() => { setShowTrade(asset.symbol); setTradeType("buy"); setConfirmStep(false) }}
               >
                 <div className="flex items-center gap-4 p-4">
-                  <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white text-lg font-bold", asset.color)}>
-                    {asset.icon}
+                  <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden", asset.color)}>
+                    <img src={asset.logo} alt={asset.symbol} className="w-7 h-7 object-contain" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -398,8 +398,8 @@ export default function CryptoPage() {
               {assets.filter((a) => a.symbol === "USDT" || a.symbol === "USDC").map((asset) => (
                 <GlassCard key={asset.symbol} padding="none" className="mb-2">
                   <div className="flex items-center gap-4 p-4">
-                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white text-lg font-bold", asset.color)}>
-                      {asset.icon}
+                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden", asset.color)}>
+                      <img src={asset.logo} alt={asset.symbol} className="w-7 h-7 object-contain" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -450,8 +450,8 @@ export default function CryptoPage() {
                   return (
                     <GlassCard key={asset.symbol} padding="md" className="hover:bg-white/[0.06] transition-colors">
                       <div className="flex items-center gap-4">
-                        <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white text-lg font-bold", asset.color)}>
-                          {asset.icon}
+                        <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden", asset.color)}>
+                          <img src={asset.logo} alt={asset.symbol} className="w-7 h-7 object-contain" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <span className="text-sm font-medium text-foreground">{asset.name}</span>
@@ -569,8 +569,8 @@ export default function CryptoPage() {
               <>
                 <DialogHeader>
                   <div className="flex items-center gap-3">
-                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg font-bold", asset.color)}>
-                      {asset.icon}
+                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center overflow-hidden", asset.color)}>
+                      <img src={asset.logo} alt={asset.symbol} className="w-7 h-7 object-contain" />
                     </div>
                     <div>
                       <DialogTitle className="text-foreground">{tradeType === "buy" ? "Buy" : "Sell"} {asset.name}</DialogTitle>
