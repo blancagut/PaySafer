@@ -11,6 +11,7 @@ import {
   Minus,
   Clock,
   Info,
+  Tag,
 } from "lucide-react"
 import { GlassCard, GlassStat } from "@/components/glass"
 import { GlassBadge } from "@/components/glass"
@@ -50,7 +51,7 @@ export default function NewsPage() {
 
   const fetchNews = useCallback(async () => {
     try {
-      const result = await getMarketNews({ limit: 30 })
+      const result = await getMarketNews({ limit: 100 })
       if (result.data) {
         setNews(result.data)
         setError(null)
@@ -77,7 +78,6 @@ export default function NewsPage() {
   const bullishCount = news.filter((n) => n.sentimentLabel.toLowerCase().includes("bullish") || n.sentimentLabel.toLowerCase().includes("positive")).length
   const bearishCount = news.filter((n) => n.sentimentLabel.toLowerCase().includes("bearish") || n.sentimentLabel.toLowerCase().includes("negative")).length
   const neutralCount = news.length - bullishCount - bearishCount
-  const avgSentiment = news.length > 0 ? news.reduce((s, n) => s + n.sentimentScore, 0) / news.length : 0
 
   if (loading) {
     return (
@@ -117,7 +117,7 @@ export default function NewsPage() {
             <div>
               <h2 className="text-2xl font-semibold tracking-tight text-foreground">Market News</h2>
               <p className="text-sm text-muted-foreground font-light tracking-wide">
-                AI-scored sentiment from financial markets
+                Finance · Stocks · Crypto · Forex · Economy · Politics
               </p>
             </div>
           </div>
@@ -132,9 +132,9 @@ export default function NewsPage() {
       {news.length > 0 && (
         <div className="animate-fade-in grid grid-cols-2 sm:grid-cols-4 gap-3" style={{ animationDelay: "80ms" }}>
           <GlassStat
-            icon={<TrendingUp className="w-4 h-4" />}
-            label="Avg Sentiment"
-            value={avgSentiment.toFixed(3)}
+            icon={<Newspaper className="w-4 h-4" />}
+            label="Articles"
+            value={String(news.length)}
           />
           <GlassStat icon={<TrendingUp className="w-4 h-4" />} label="Bullish" value={String(bullishCount)} glowColor="emerald" />
           <GlassStat icon={<TrendingDown className="w-4 h-4" />} label="Bearish" value={String(bearishCount)} glowColor="red" />
@@ -194,6 +194,17 @@ export default function NewsPage() {
                       </div>
                     )}
 
+                    {item.categories?.length > 0 && (
+                      <div className="flex items-center gap-1">
+                        <Tag className="w-2.5 h-2.5 text-muted-foreground/40" />
+                        {item.categories.slice(0, 2).map((cat: string) => (
+                          <span key={cat} className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary/70 capitalize">
+                            {cat}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
                     {item.timePublished && (
                       <span className="text-[10px] text-muted-foreground/40 flex items-center gap-0.5">
                         <Clock className="w-2.5 h-2.5" />
@@ -226,8 +237,8 @@ export default function NewsPage() {
       <div className="animate-fade-in flex items-start gap-2 p-3 rounded-xl bg-white/[0.02] border border-white/[0.06]" style={{ animationDelay: "240ms" }}>
         <Info className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
         <p className="text-xs text-muted-foreground/70">
-          News and sentiment powered by Alpha Vantage. Sentiment scores are AI-generated and
-          should not be used as sole basis for financial decisions.
+          News powered by Currents API (primary) and Alpha Vantage (fallback). Sentiment scores
+          are keyword-based estimates and should not be used as the sole basis for financial decisions.
         </p>
       </div>
     </div>

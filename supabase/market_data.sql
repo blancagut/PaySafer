@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS market_news (
   sentiment_label TEXT DEFAULT 'Neutral',
   time_published TIMESTAMPTZ,
   tickers TEXT[] DEFAULT '{}',
+  categories TEXT[] DEFAULT '{}',
   fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_market_news_published ON market_news(time_published DESC);

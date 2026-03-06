@@ -15,10 +15,11 @@ export interface MarketNewsItem {
   sentimentLabel: string
   timePublished: string
   tickers: string[]
+  categories: string[]
 }
 
-/** Cache staleness — 12 hours for news */
-const NEWS_STALE_MS = 12 * 60 * 60 * 1000
+/** Cache staleness — 2 hours for Currents API news */
+const NEWS_STALE_MS = 2 * 60 * 60 * 1000
 
 // ═══════════════════════════════════════════════════════════
 // GET MARKET NEWS
@@ -33,7 +34,7 @@ export async function getMarketNews(options?: {
 }> {
   try {
     const admin = createAdminClient()
-    const limit = options?.limit || 20
+    const limit = options?.limit || 100
 
     // Check if we have recent news
     const { data: latest } = await admin
@@ -89,19 +90,69 @@ function mapNewsRow(row: any): MarketNewsItem {
     sentimentLabel: row.sentiment_label || 'Neutral',
     timePublished: row.time_published,
     tickers: row.tickers || [],
+    categories: row.categories || [],
   }
 }
 
 /**
- * Refresh news from Alpha Vantage NEWS_SENTIMENT.
- * 1 API call per refresh. Returns up to 50 articles.
+ * Refresh news — Currents API as primary, Alpha Vantage as fallback.
+ * Stores up to 200 articles per cycle (refreshed every 2 h).
  */
 export async function refreshMarketNews(ticker?: string): Promise<void> {
+  const admin = createAdminClient()
+
+  // ── Primary: Currents API ──────────────────────────────────────────────────
+  try {
+    const { fetchCurrentsNews, scoreCurrentsSentiment } = await import('@/lib/actions/currents-news')
+    const articles = await fetchCurrentsNews(200)
+
+    if (articles.length > 0) {
+      for (const article of articles) {
+        const { score, label } = await scoreCurrentsSentiment(article.title, article.description)
+
+        let publishedAt: string
+        try {
+          publishedAt = article.published
+            ? new Date(article.published).toISOString()
+            : new Date().toISOString()
+        } catch {
+          publishedAt = new Date().toISOString()
+        }
+
+        let sourceDomain = ''
+        try { sourceDomain = new URL(article.url).hostname.replace('www.', '') } catch { /* */ }
+
+        await admin.from('market_news').upsert({
+          title: article.title,
+          url: article.url,
+          source: article.author || sourceDomain,
+          source_domain: sourceDomain,
+          summary: article.description || '',
+          banner_image: article.image || null,
+          authors: article.author ? [article.author] : [],
+          sentiment_score: score,
+          sentiment_label: label,
+          time_published: publishedAt,
+          tickers: [],
+          categories: article.category || [],
+          fetched_at: new Date().toISOString(),
+        }, { onConflict: 'url' }).then(() => {}, (err) => {
+          if (!err?.message?.includes('unique')) {
+            console.error('[refreshMarketNews:currents] Insert error:', err)
+          }
+        })
+      }
+      console.log(`[refreshMarketNews] Currents API: stored ${articles.length} articles`)
+      return // success — skip Alpha Vantage fallback
+    }
+  } catch (err) {
+    console.warn('[refreshMarketNews] Currents API failed, falling back to Alpha Vantage:', err)
+  }
+
+  // ── Fallback: Alpha Vantage NEWS_SENTIMENT ─────────────────────────────────
   try {
     const { getNewsSentiment } = await import('@/lib/alphavantage/client')
-    const admin = createAdminClient()
 
-    // Fetch financial news — topics default to finance/economy
     const articles = await getNewsSentiment(
       ticker || 'COIN:BTC,COIN:ETH,FOREX:USD',
       'financial_markets,economy_monetary',
@@ -109,7 +160,6 @@ export async function refreshMarketNews(ticker?: string): Promise<void> {
     )
 
     for (const article of articles) {
-      // Parse the Alpha Vantage time format: "20240615T120000"
       let publishedAt: string
       try {
         const ts = article.timePublished
@@ -137,15 +187,16 @@ export async function refreshMarketNews(ticker?: string): Promise<void> {
         sentiment_label: article.overallSentimentLabel,
         time_published: publishedAt,
         tickers,
+        categories: [],
         fetched_at: new Date().toISOString(),
       }, { onConflict: 'url' }).then(() => {}, (err) => {
-        // Ignore duplicate URL conflicts
-        if (!err.message?.includes('unique')) {
-          console.error('[refreshMarketNews] Insert error:', err)
+        if (!err?.message?.includes('unique')) {
+          console.error('[refreshMarketNews:alphavantage] Insert error:', err)
         }
       })
     }
+    console.log(`[refreshMarketNews] Alpha Vantage fallback: stored ${articles.length} articles`)
   } catch (err) {
-    console.error('[refreshMarketNews] Error:', err)
+    console.error('[refreshMarketNews] Both providers failed:', err)
   }
 }
