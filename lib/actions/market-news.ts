@@ -78,9 +78,8 @@ export async function getMarketNews(options?: {
     const { fetchCurrentsNews, scoreCurrentsSentiment } = await import('@/lib/actions/currents-news')
     const articles = await fetchCurrentsNews(limit)
 
-    const items: MarketNewsItem[] = await Promise.all(
-      articles.map(async (a) => {
-        const { score, label } = await scoreCurrentsSentiment(a.title, a.description)
+    const items: MarketNewsItem[] = articles.map((a) => {
+        const { score, label } = scoreCurrentsSentiment(a.title, a.description)
         let sourceDomain = ''
         try { sourceDomain = new URL(a.url).hostname.replace('www.', '') } catch { /* */ }
         return {
@@ -99,7 +98,6 @@ export async function getMarketNews(options?: {
           categories: a.category || [],
         }
       })
-    )
 
     return { data: items }
   } catch (err) {
@@ -141,7 +139,7 @@ export async function refreshMarketNews(ticker?: string): Promise<void> {
 
     if (articles.length > 0) {
       for (const article of articles) {
-        const { score, label } = await scoreCurrentsSentiment(article.title, article.description)
+        const { score, label } = scoreCurrentsSentiment(article.title, article.description)
 
         let publishedAt: string
         try {

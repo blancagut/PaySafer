@@ -1,8 +1,6 @@
-'use server'
-
 /**
- * Currents API news fetcher
- * Filters: finance, stocks, economy, forex, crypto, politics (economic)
+ * Currents API news fetcher — plain server-side utility (no 'use server').
+ * Import this only in API routes or server components, never from client code.
  * API docs: https://currentsapi.services/en/docs/
  */
 
@@ -113,10 +111,10 @@ export async function fetchCurrentsNews(limit = 200): Promise<CurrentsNewsItem[]
  * Naive keyword-based sentiment scorer.
  * Returns a score in [-1, 1] and a label.
  */
-export async function scoreCurrentsSentiment(title: string, description: string): Promise<{
+export function scoreCurrentsSentiment(title: string, description: string): {
   score: number
   label: string
-}> {
+} {
   const text = `${title} ${description}`.toLowerCase()
 
   const bullish = [
