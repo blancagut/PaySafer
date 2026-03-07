@@ -32,11 +32,12 @@ export async function getMarketNews(options?: {
   data?: MarketNewsItem[]
   error?: string
 }> {
+  const limit = options?.limit || 100
+
   try {
     const admin = createAdminClient()
-    const limit = options?.limit || 100
 
-    // Check if we have recent news
+    // Check if we have recent cached news
     const { data: latest } = await admin
       .from('market_news')
       .select('fetched_at')
@@ -48,10 +49,11 @@ export async function getMarketNews(options?: {
       now.getTime() - new Date(latest[0].fetched_at).getTime() > NEWS_STALE_MS
 
     if (isStale) {
-      await refreshMarketNews(options?.ticker)
+      // Fire refresh in background — don't block the response
+      refreshMarketNews(options?.ticker).catch(() => {})
     }
 
-    // Read from cache
+    // Read from DB cache
     let query = admin
       .from('market_news')
       .select('*')
@@ -64,13 +66,44 @@ export async function getMarketNews(options?: {
 
     const { data: rows, error } = await query
 
-    if (error) return { error: error.message }
-
-    return {
-      data: (rows || []).map(mapNewsRow),
+    if (!error && rows && rows.length > 0) {
+      return { data: rows.map(mapNewsRow) }
     }
   } catch (err) {
-    console.error('[getMarketNews] Error:', err)
+    console.warn('[getMarketNews] DB unavailable, falling back to direct fetch:', err)
+  }
+
+  // ── Direct fallback: fetch from Currents API live ──────────────────────────
+  try {
+    const { fetchCurrentsNews, scoreCurrentsSentiment } = await import('@/lib/actions/currents-news')
+    const articles = await fetchCurrentsNews(limit)
+
+    const items: MarketNewsItem[] = await Promise.all(
+      articles.map(async (a) => {
+        const { score, label } = await scoreCurrentsSentiment(a.title, a.description)
+        let sourceDomain = ''
+        try { sourceDomain = new URL(a.url).hostname.replace('www.', '') } catch { /* */ }
+        return {
+          id: a.id,
+          title: a.title,
+          url: a.url,
+          source: a.author || sourceDomain,
+          sourceDomain,
+          summary: a.description || '',
+          bannerImage: a.image || null,
+          authors: a.author ? [a.author] : [],
+          sentimentScore: score,
+          sentimentLabel: label,
+          timePublished: a.published ? new Date(a.published).toISOString() : new Date().toISOString(),
+          tickers: [],
+          categories: a.category || [],
+        }
+      })
+    )
+
+    return { data: items }
+  } catch (err) {
+    console.error('[getMarketNews] Direct Currents fetch also failed:', err)
     return { error: 'Failed to fetch market news' }
   }
 }

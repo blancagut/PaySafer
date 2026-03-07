@@ -237,8 +237,8 @@ export default function NewsPage() {
       <div className="animate-fade-in flex items-start gap-2 p-3 rounded-xl bg-white/[0.02] border border-white/[0.06]" style={{ animationDelay: "240ms" }}>
         <Info className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
         <p className="text-xs text-muted-foreground/70">
-          News powered by Currents API (primary) and Alpha Vantage (fallback). Sentiment scores
-          are keyword-based estimates and should not be used as the sole basis for financial decisions.
+          News powered by Currents API. Sentiment scores are keyword-based estimates
+          and should not be used as the sole basis for financial decisions.
         </p>
       </div>
     </div>
