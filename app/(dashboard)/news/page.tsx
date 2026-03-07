@@ -13,23 +13,56 @@ import {
   ChevronLeft,
   ChevronRight,
   BarChart2,
+  Globe,
+  Briefcase,
+  Coins,
+  ArrowLeftRight,
+  Landmark,
+  Scale,
 } from "lucide-react"
 import { GlassCard } from "@/components/glass"
 import { GlassBadge } from "@/components/glass"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import type { NewsApiResponse, NewsArticle } from "@/app/api/news/currents/route"
+
+interface NewsArticle {
+  id: string
+  title: string
+  description: string
+  url: string
+  author: string
+  image: string | null
+  category: string[]
+  published: string
+  sourceDomain: string
+  sentiment: {
+    score: number
+    label: string
+  }
+}
+
+interface NewsApiResponse {
+  articles: NewsArticle[]
+  stats: {
+    total: number
+    bullish: number
+    bearish: number
+    neutral: number
+  }
+  category: string
+  fetchedAt: string
+}
 
 // ─── Category config ─────────────────────────────────────────────────────────
 const CATEGORIES = [
-  { id: "all",      label: "All",      emoji: "🌐" },
-  { id: "finance",  label: "Finance",  emoji: "💰" },
-  { id: "crypto",   label: "Crypto",   emoji: "₿"  },
-  { id: "forex",    label: "Forex",    emoji: "💱" },
-  { id: "stocks",   label: "Stocks",   emoji: "📈" },
-  { id: "economy",  label: "Economy",  emoji: "🏦" },
-  { id: "politics", label: "Politics", emoji: "🏛️" },
+  { id: "all", label: "All", icon: Globe },
+  { id: "finance", label: "Finance", icon: Briefcase },
+  { id: "crypto", label: "Crypto", icon: Coins },
+  { id: "forex", label: "Forex", icon: ArrowLeftRight },
+  { id: "stocks", label: "Stocks", icon: TrendingUp },
+  { id: "economy", label: "Economy", icon: Landmark },
+  { id: "politics", label: "Politics", icon: Scale },
 ] as const
 
 type CategoryId = (typeof CATEGORIES)[number]["id"]
@@ -237,7 +270,7 @@ export default function NewsPage() {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           style={{ WebkitOverflowScrolling: "touch" } as any}
         >
-          {CATEGORIES.map(({ id, label, emoji }) => (
+          {CATEGORIES.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => handleTabClick(id as CategoryId)}
@@ -248,7 +281,7 @@ export default function NewsPage() {
                   : "border-white/10 text-white/60 hover:border-white/20 hover:text-white hover:bg-white/5"
               )}
             >
-              <span role="img" aria-label={label}>{emoji}</span>
+              <Icon className="h-4 w-4" />
               {label}
             </button>
           ))}

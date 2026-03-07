@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchCurrentsNews, scoreCurrentsSentiment, CurrentsNewsItem } from '@/lib/actions/currents-news'
 
 export const runtime = 'nodejs'
@@ -43,42 +44,84 @@ export interface NewsApiResponse {
   fetchedAt: string
 }
 
+const CATEGORY_FILTERS: Record<string, string[]> = {
+  all: [],
+  finance: ['finance', 'bank', 'banking', 'invest', 'earnings', 'interest', 'bond', 'treasury', 'wall street'],
+  crypto: ['crypto', 'bitcoin', 'ethereum', 'blockchain', 'token', 'defi', 'solana', 'ripple'],
+  forex: ['forex', 'currency', 'exchange rate', 'dollar', 'euro', 'yen', 'sterling', 'fx'],
+  stocks: ['stock', 'stocks', 'shares', 'equity', 'nasdaq', 'nyse', 'ipo', 'dividend'],
+  economy: ['economy', 'gdp', 'inflation', 'recession', 'cpi', 'unemployment', 'central bank', 'monetary'],
+  politics: ['government', 'policy', 'regulation', 'sanction', 'tariff', 'trade war', 'federal reserve', 'ecb'],
+}
+
+function matchesCategory(article: CurrentsNewsItem, category: string): boolean {
+  if (category === 'all') return true
+
+  const haystack = [
+    article.title,
+    article.description,
+    article.author,
+    ...(article.category || []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+  return (CATEGORY_FILTERS[category] || []).some((term) => haystack.includes(term))
+}
+
+async function readCachedArticles(limit: number): Promise<CurrentsNewsItem[]> {
+  try {
+    const admin = createAdminClient()
+    const { data, error } = await admin
+      .from('market_news')
+      .select('id, title, summary, url, source, banner_image, time_published')
+      .order('time_published', { ascending: false })
+      .limit(Math.max(limit, 60))
+
+    if (error || !data?.length) return []
+
+    return data.map((row) => ({
+      id: row.id,
+      title: row.title,
+      description: row.summary || '',
+      url: row.url,
+      author: row.source || '',
+      image: row.banner_image || null,
+      language: 'en',
+      category: [],
+      published: row.time_published || new Date().toISOString(),
+    }))
+  } catch (error) {
+    console.warn('[api/news/currents] cache fallback unavailable:', error)
+    return []
+  }
+}
+
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const { searchParams } = req.nextUrl
   const category = (searchParams.get('category') || 'all').toLowerCase()
   const limit = Math.min(200, parseInt(searchParams.get('limit') || '60', 10))
 
-  const keywords = CATEGORY_KEYWORDS[category] ?? CATEGORY_KEYWORDS['all']
-
   let articles: CurrentsNewsItem[] = []
 
-  // For 'all', use the multi-topic fetch; for specific categories use single targeted fetch
-  if (category === 'all') {
-    articles = await fetchCurrentsNews(limit)
-  } else {
-    // Direct single-category fetch
-    const url = new URL('https://api.currentsapi.services/v1/search')
-    url.searchParams.set('language', 'en')
-    url.searchParams.set('keywords', keywords)
-    url.searchParams.set('limit', String(Math.min(200, limit)))
+  try {
+    articles = await fetchCurrentsNews(Math.max(limit, 60))
+  } catch (error) {
+    console.error('[api/news/currents] live fetch failed:', error)
+  }
 
-    try {
-      const res = await fetch(url.toString(), {
-        headers: { Authorization: process.env.CURRENTS_API_KEY! },
-        next: { revalidate: 300 },
-      })
-      if (res.ok) {
-        const json = await res.json()
-        if (json.status === 'ok') articles = json.news || []
-      }
-    } catch (err) {
-      console.error('[api/news/currents] fetch error:', err)
-    }
+  if (articles.length === 0) {
+    articles = await readCachedArticles(limit)
+  }
 
-    // If direct fetch returned nothing, fall back to the multi-search helper
-    if (articles.length === 0) {
-      articles = await fetchCurrentsNews(limit)
-    }
+  if (category !== 'all') {
+    articles = articles.filter((article) => matchesCategory(article, category))
+  }
+
+  if (articles.length === 0 && category !== 'all') {
+    const fallbackArticles = await readCachedArticles(limit)
+    articles = fallbackArticles.filter((article) => matchesCategory(article, category))
   }
 
   // Score sentiment + build response

@@ -37,7 +37,7 @@ async function fetchSearch(params: Record<string, string>): Promise<CurrentsNews
 
   const res = await fetch(url.toString(), {
     headers: { Authorization: getApiKey() },
-    next: { revalidate: 0 },
+    next: { revalidate: 300 },
   })
 
   if (!res.ok) {
