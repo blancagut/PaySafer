@@ -127,7 +127,7 @@ function extractNewsItems(payload: any): FinanceNewsItem[] {
       item?.publisher ||
       item?.provider?.displayName ||
       item?.content?.provider?.displayName ||
-      "Yahoo Finance"
+      "Financial News"
 
     const publishedAt =
       item?.publishedAt ||
@@ -664,7 +664,7 @@ export default function DashboardPage() {
       <GlassContainer
         header={{
           title: 'Stocks Snapshot',
-          description: 'Daily market data (Alpha Vantage)',
+          description: 'Daily closing prices',
         }}
       >
         <div className="space-y-3">

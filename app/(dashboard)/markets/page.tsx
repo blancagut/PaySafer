@@ -214,8 +214,7 @@ export default function MarketsPage() {
       <div className="animate-fade-in flex items-start gap-2 p-3 rounded-xl bg-white/[0.02] border border-white/[0.06]" style={{ animationDelay: "240ms" }}>
         <Info className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
         <p className="text-xs text-muted-foreground/70">
-          Market data powered by Alpha Vantage. Prices may be delayed. Economic indicators updated {" "}
-          weekly. Not financial advice.
+          Market prices may be delayed. Economic indicators are updated weekly. Not financial advice.
         </p>
       </div>
     </div>

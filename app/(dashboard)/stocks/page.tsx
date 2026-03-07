@@ -404,8 +404,7 @@ export default function StocksPage() {
       <div className="animate-fade-in flex items-start gap-2 p-3 rounded-xl bg-white/[0.02] border border-white/[0.06]" style={{ animationDelay: "280ms" }}>
         <Info className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
         <p className="text-xs text-muted-foreground/70">
-          Stock data powered by Alpha Vantage (free tier, 25 calls/day). Prices may be delayed 15-20 min.
-          Not financial advice.
+          Stock prices may be delayed up to 15–20 minutes. Not financial advice.
         </p>
       </div>
     </div>
